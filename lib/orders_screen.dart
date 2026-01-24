@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:saturnotrc/drinks_menu_screen.dart';
-import 'package:saturnotrc/payment_screen.dart';
+import 'package:myapp/drinks_menu_screen.dart';
+import 'package:myapp/order_detail_screen.dart';
 
-class OrdersScreen extends StatelessWidget {
-  const OrdersScreen({super.key});
+class OrderListScreen extends StatelessWidget {
+  const OrderListScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -14,51 +14,53 @@ class OrdersScreen extends StatelessWidget {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('ordenes_activas').snapshots(),
+        stream: FirebaseFirestore.instance.collection('pedidos').where('activa', isEqualTo: true).snapshots(),
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const Center(child: Text('Error al cargar las órdenes.'));
+          }
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return const Center(child: Text('No hay órdenes activas.'));
           }
+
           return ListView.builder(
             itemCount: snapshot.data!.docs.length,
             itemBuilder: (context, index) {
               final order = snapshot.data!.docs[index];
               final orderData = order.data() as Map<String, dynamic>;
-              final orderName = orderData['nombre_orden'] ?? 'Orden sin nombre';
 
               return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                margin: const EdgeInsets.all(8.0),
                 child: ListTile(
-                  title: Text(orderName),
-                  trailing: ElevatedButton(
-                    child: const Text('Cobrar'),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => PaymentScreen(order: order),
-                        ),
-                      );
-                    },
-                  ),
+                  title: Text(orderData['nombre_orden'] ?? 'Orden sin nombre'),
+                  subtitle: Text('Total: \$${(orderData['total_orden'] ?? 0.0).toStringAsFixed(2)}'),
+                  trailing: const Icon(Icons.arrow_forward_ios),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => OrderDetailScreen(order: order),
+                      ),
+                    );
+                  },
                 ),
               );
             },
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => const DrinksMenuScreen()),
           );
         },
-        label: const Text('Menú'),
-        icon: const Icon(Icons.menu_book),
+        tooltip: 'Nueva Orden',
+        child: const Icon(Icons.add),
       ),
     );
   }

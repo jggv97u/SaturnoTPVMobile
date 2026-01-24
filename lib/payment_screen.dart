@@ -1,105 +1,110 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:saturnotrc/receipt_screen.dart';
 
-class PaymentScreen extends StatelessWidget {
+class PaymentScreen extends StatefulWidget {
   final DocumentSnapshot order;
 
   const PaymentScreen({super.key, required this.order});
 
-  Future<void> _processPayment(BuildContext context, double total) async {
-    final orderData = order.data() as Map<String, dynamic>;
+  @override
+  State<PaymentScreen> createState() => _PaymentScreenState();
+}
 
-    final newClosedOrder = {
-      'nombre_orden': orderData['nombre_orden'] ?? 'N/A',
-      'items': orderData['items'] ?? [],
-      'total_orden': total,
-      'timestamp_apertura': orderData['timestamp'] ?? FieldValue.serverTimestamp(),
-      'timestamp_cierre': FieldValue.serverTimestamp(),
-      'pagado': true,
-    };
+class _PaymentScreenState extends State<PaymentScreen> {
+  bool _isProcessing = false;
 
-    await FirebaseFirestore.instance.collection('ordenes_cerradas').add(newClosedOrder);
-    await FirebaseFirestore.instance.collection('ordenes_activas').doc(order.id).delete();
+  Future<void> _finalizePayment(String paymentMethod) async {
+    setState(() {
+      _isProcessing = true;
+    });
 
-    if (!context.mounted) return;
+    try {
+      await widget.order.reference.update({
+        'pagada': true,
+        'activa': false, 
+        'metodo_pago': paymentMethod,
+        'fecha_finalizacion': FieldValue.serverTimestamp(),
+      });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('¡Pago completado! Orden cerrada.'), backgroundColor: Colors.green),
-    );
-    // Navegar hacia atrás 2 veces para volver a la pantalla principal de órdenes
-    int count = 0;
-    Navigator.of(context).popUntil((_) => count++ >= 2);
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (context) => ReceiptScreen(orderId: widget.order.id),
+          ),
+          (Route<dynamic> route) => route.isFirst,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al finalizar el pago.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final orderData = order.data() as Map<String, dynamic>?;
-
-    if (orderData == null) {
-      return const Scaffold(
-        body: Center(
-          child: Text('Error: No se pudieron cargar los datos de la orden.'),
-        ),
-      );
-    }
-
-    final items = (orderData['items'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
-    final total = (orderData['total_orden'] ?? 0.0).toDouble();
+    final orderData = widget.order.data() as Map<String, dynamic>;
+    final double total = (orderData['total_orden'] ?? 0.0).toDouble();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Confirmar y Pagar'),
+        title: const Text('Realizar Pago'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Recibo de la Orden', 
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)
+              'Total a Pagar:',
+              style: Theme.of(context).textTheme.headlineSmall,
+              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: ListView.builder(
-                itemCount: items.length,
-                itemBuilder: (context, index) {
-                  final item = items[index];
-                  final itemName = item['nombre'] ?? 'Artículo no encontrado';
-                  final quantity = item['quantity'] ?? 0;
-                  final price = (item['precio'] ?? 0.0).toDouble();
-                  return ListTile(
-                    title: Text(itemName),
-                    subtitle: Text('Cantidad: $quantity'),
-                    trailing: Text('\$${(price * quantity).toStringAsFixed(2)}'),
-                  );
-                },
-              ),
+            Text(
+              '\$${total.toStringAsFixed(2)}',
+              style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+              textAlign: TextAlign.center,
             ),
-            const Divider(thickness: 2),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            const SizedBox(height: 40),
+            if (_isProcessing)
+              const Center(child: CircularProgressIndicator())
+            else
+              Column(
                 children: [
-                  Text('Total a Pagar:', style: Theme.of(context).textTheme.titleLarge),
-                  Text(
-                    '\$${total.toStringAsFixed(2)}',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: Colors.green),
+                  ElevatedButton.icon(
+                    onPressed: () => _finalizePayment('Efectivo'),
+                    icon: const Icon(Icons.money),
+                    label: const Text('Pagar con Efectivo'),
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 60),
+                      textStyle: const TextStyle(fontSize: 20),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    onPressed: () => _finalizePayment('Tarjeta'),
+                    icon: const Icon(Icons.credit_card),
+                    label: const Text('Pagar con Tarjeta'),
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 60),
+                      textStyle: const TextStyle(fontSize: 20),
+                    ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.payment),
-              label: const Text('Pagar Ahora'),
-              onPressed: () => _processPayment(context, total),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 15),
-                textStyle: const TextStyle(fontSize: 18),
-              ),
-            ),
           ],
         ),
       ),
