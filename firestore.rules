@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /bebidas/{document=**} {
+      allow read: if true;
+    }
+    match /pedidos/{document=**} {
+      // Permite leer, crear, actualizar y borrar en la colección de pedidos.
+      allow read, write: if true;
+    }
+    match /ordenes_archivadas/{document=**} {
+      // Permite leer, crear, actualizar y borrar en la colección de archivadas.
+      // Esto es crucial para que la transacción de finalización de orden funcione.
+      allow read, write: if true;
+    }
+  }
+}

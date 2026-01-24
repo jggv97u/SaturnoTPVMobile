@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "891101504134",
+    "project_id": "saturnotrcventasdb",
+    "storage_bucket": "saturnotrcventasdb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:891101504134:android:bc451a401f3669df5ba707",
+        "android_client_info": {
+          "package_name": "com.example.myapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "891101504134-svoco73damhm9c9t63hdgnd6br6ronk7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAPzC0s0iQZbcHjjIgth7_zML75IEzxwBE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "891101504134-svoco73damhm9c9t63hdgnd6br6ronk7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
