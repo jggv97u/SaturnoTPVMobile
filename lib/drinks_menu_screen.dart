@@ -146,6 +146,7 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
               stream: FirebaseFirestore.instance
                   .collection('bebidas')
                   .where('inStock', isEqualTo: true)
+                  .orderBy('nombre')
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
@@ -157,9 +158,18 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
 
                 final drinks = snapshot.data!.docs;
                 final groupedDrinks = groupBy(drinks, (doc) => (doc.data() as Map)['categoria']);
+                final sortedEntries = groupedDrinks.entries.toList()
+                  ..sort((a, b) => a.key.compareTo(b.key));
 
                 return ListView(
-                  children: groupedDrinks.entries.map((entry) {
+                  children: sortedEntries.map((entry) {
+                    // Explicitly sort the drinks within each category
+                    final sortedDrinks = entry.value..sort((a, b) {
+                      final aName = (a.data() as Map<String, dynamic>)['nombre'] as String;
+                      final bName = (b.data() as Map<String, dynamic>)['nombre'] as String;
+                      return aName.compareTo(bName);
+                    });
+
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -172,7 +182,7 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
                                 ),
                           ),
                         ),
-                        ...entry.value.map((drink) {
+                        ...sortedDrinks.map((drink) { // Use the newly sorted list
                           final drinkId = drink.id;
                           final drinkData = drink.data() as Map<String, dynamic>;
                           final quantity = _orderItems[drinkId] ?? 0;
