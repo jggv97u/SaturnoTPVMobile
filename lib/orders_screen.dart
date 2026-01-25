@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:myapp/drinks_menu_screen.dart';
-import 'package:myapp/order_detail_screen.dart';
+import 'package:saturnotrc/drinks_menu_screen.dart';
+import 'package:saturnotrc/order_detail_screen.dart';
 
 class OrderListScreen extends StatelessWidget {
   const OrderListScreen({super.key});

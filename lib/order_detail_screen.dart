@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:saturnotrc/drinks_menu_screen.dart';
 import 'package:saturnotrc/payment_screen.dart';
 
 class OrderDetailScreen extends StatefulWidget {
@@ -118,6 +119,22 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     minimumSize: const Size(double.infinity, 50),
                   ),
                   child: const Text('Proceder al Pago'),
+                ),
+                const SizedBox(height: 10),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => DrinksMenuScreen(existingOrder: widget.order),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 50),
+                    backgroundColor: Colors.orange,
+                  ),
+                  child: const Text('Modificar Orden'),
                 ),
                 const SizedBox(height: 10),
                 OutlinedButton(

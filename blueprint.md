@@ -18,7 +18,30 @@ Esta sección documenta el estado actual de la aplicación, reflejando las funci
    - **Botón de Cobrar**: Cada orden tiene un botón que navega a la pantalla de pago (`PaymentScreen`), pasando la información completa de la orden seleccionada.
    - **Estilo Visual**: La pantalla principal utiliza un `AppBar` con el título "Órdenes Activas Saturno" y un color de fondo `inversePrimary` del tema de Material 3, proporcionando una apariencia moderna y limpia.
 
-### 2. **Proceso de Pago y Finalización (`PaymentScreen`)**
+### 2. **Creación y Modificación de Órdenes (`DrinksMenuScreen`)**
+   - **Doble Funcionalidad**: Esta pantalla permite tanto crear una nueva orden desde cero como modificar una orden existente.
+   - **Modo Creación**: 
+     - El usuario puede seleccionar bebidas y asignarle un nombre a la nueva orden.
+     - El botón "Ver Orden" lo lleva a `OrderSummaryScreen` para confirmar y finalizar la creación.
+   - **Modo Modificación**:
+     - Se accede a este modo desde el botón "Modificar Orden" en `OrderDetailScreen`.
+     - La pantalla carga automáticamente el nombre y los productos de la orden existente.
+     - El botón cambia a "Guardar Cambios", y al presionarlo, se actualiza el documento de la orden en Firestore con los nuevos productos y el nuevo total, sin necesidad de pasar por la pantalla de resumen.
+   - **Campo de Nombre de Orden**: Se ha añadido un `TextField` para que el nombre de la orden pueda ser asignado o editado directamente desde esta pantalla.
+
+### 3. **Detalle de la Orden (`OrderDetailScreen`)**
+   - **Visualización Completa**: Muestra un desglose de todos los productos en una orden, con sus cantidades y precios, además del total.
+   - **Acciones Disponibles**:
+     - **Proceder al Pago**: Navega a `PaymentScreen`.
+     - **Modificar Orden**: Navega a `DrinksMenuScreen` en modo de edición.
+     - **Cancelar Orden**: Permite marcar una orden como inactiva, sacándola de la lista principal.
+
+### 4. **Resumen y Confirmación (`OrderSummaryScreen`)**
+   - **Confirmación de Nueva Orden**: Antes de crear una nueva orden, el usuario ve un resumen final.
+   - **Rendimiento Optimizado**: La pantalla ha sido refactorizada para realizar una única consulta a Firestore para obtener los detalles de todos los productos de la orden, en lugar de una consulta por producto. Esto mejora significativamente la velocidad y reduce los costos de lectura de la base de datos.
+   - **Visualización Clara**: Muestra el nombre de la orden y una lista detallada de los productos y el total antes de confirmar.
+
+### 5. **Proceso de Pago y Finalización (`PaymentScreen`)**
    - **Navegación**: Al pulsar "Cobrar", el usuario es llevado a esta pantalla, que recibe el `DocumentSnapshot` de la orden.
    - **Visualización del Total**: La pantalla muestra de forma prominente el monto total a pagar, extraído del campo `total_orden` del documento.
    - **Métodos de Pago**: Se presentan botones para seleccionar el método de pago (Efectivo y Transferencia). El botón de Tarjeta está presente pero deshabilitado.
@@ -30,7 +53,7 @@ Esta sección documenta el estado actual de la aplicación, reflejando las funci
    - **Manejo de Errores**: Se ha implementado un bloque `try-catch` robusto. Si la transacción falla, se muestra una `SnackBar` de error y se registra el error detallado en la consola del desarrollador usando `dart:developer` para facilitar la depuración.
    - **Control de Estado**: Un indicador de carga (`CircularProgressIndicator`) se muestra mientras se procesa el pago para evitar que el usuario realice acciones duplicadas.
 
-### 3. **Pantalla de Nota de Venta y Compartir (`ReceiptScreen`)**
+### 6. **Pantalla de Nota de Venta y Compartir (`ReceiptScreen`)**
    - **Flujo de Navegación**: Después de que una orden es finalizada exitosamente en `PaymentScreen`, la aplicación navega a la `ReceiptScreen` utilizando `pushAndRemoveUntil` para limpiar el historial de navegación y evitar que el usuario vuelva a la pantalla de pago.
    - **Diseño de la Nota**: La pantalla presenta la información de la orden archivada en una `Card` con un diseño limpio y profesional. Muestra el nombre de la orden, la lista de artículos con sus precios, el total, y el método de pago.
    - **Formato de Moneda**: Se utiliza el paquete `intl` (`NumberFormat.simpleCurrency`) para formatear todos los montos en moneda local (MXN), mejorando la legibilidad.
@@ -38,22 +61,23 @@ Esta sección documenta el estado actual de la aplicación, reflejando las funci
    - **Generación de Texto para Compartir**: La nota de texto para compartir ha sido mejorada con un formato más atractivo, incluyendo emojis y una estructura clara, para ser enviada por WhatsApp u otros medios.
    - **Navegación de Cierre**: Un botón de "Cerrar" (`Icon(Icons.close)`) en el `AppBar` permite al usuario salir de la pantalla de la nota y volver a la pantalla principal (`OrderListScreen`) de una sola vez.
 
-### 4. **Estructura y Arquitectura**
+### 7. **Estructura y Arquitectura**
    - **Firebase Core**: El proyecto está configurado con `firebase_core` y `cloud_firestore` para la conectividad con la base de datos.
    - **Punto de Entrada (`main.dart`)**: Inicializa Firebase y define el `MaterialApp` con las rutas y el tema de la aplicación.
    - **Tema (Material 3)**: Se utiliza `ThemeData(useMaterial3: true)` con un `ColorScheme` generado a partir de un `seedColor` (actualmente `deepPurple`), lo que garantiza una estética consistente y moderna en toda la aplicación.
 
-### 5. **Modelo de Datos en Firestore**
-   - **`ordenes_activas`**: Colección que almacena las órdenes en curso.
+### 8. **Modelo de Datos en Firestore**
+   - **`pedidos`**: Colección que almacena las órdenes.
      - `nombre_orden` (String)
      - `items` (Array de Maps)
      - `total_orden` (Number)
-     - `timestamp` (Timestamp)
-     - `activa` (Boolean: `true`)
-   - **`ordenes_archivadas`**: Colección para el histórico de ventas.
-     - Mismos campos que `ordenes_activas`, más:
-     - `metodo_pago` (String)
-     - `fecha_finalizacion` (Timestamp)
-     - `id_original` (String)
+     - `fecha_hora` (Timestamp)
+     - `activa` (Boolean: `true` para activas, `false` para canceladas)
+     - `pagada` (Boolean: `true` o `false`)
+   - **`bebidas`**: Colección para el catálogo de productos.
+     - `nombre` (String)
+     - `precio` (Number)
+     - `categoria` (String)
+     - `inStock` (Boolean)
 
 ---

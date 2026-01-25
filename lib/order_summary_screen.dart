@@ -3,21 +3,25 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class OrderSummaryScreen extends StatefulWidget {
   final Map<String, int> orderItems;
+  final String orderName;
 
-  const OrderSummaryScreen({super.key, required this.orderItems});
+  const OrderSummaryScreen({
+    super.key,
+    required this.orderItems,
+    required this.orderName,
+  });
 
   @override
   State<OrderSummaryScreen> createState() => _OrderSummaryScreenState();
 }
 
 class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
-  final _orderNameController = TextEditingController();
   bool _isLoading = false;
 
-  Future<void> _placeOrder() async {
-    if (_orderNameController.text.isEmpty) {
+  Future<void> _placeOrder(double totalOrder, List<Map<String, dynamic>> orderDetails) async {
+    if (widget.orderName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, ingresa un nombre para la orden.')),
+        const SnackBar(content: Text('El nombre de la orden no puede estar vacío.')),
       );
       return;
     }
@@ -27,29 +31,8 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
     });
 
     try {
-      final drinksCollection = FirebaseFirestore.instance.collection('bebidas');
-      final orderDetails = <Map<String, dynamic>>[];
-      double totalOrder = 0;
-
-      for (var item in widget.orderItems.entries) {
-        final drinkDoc = await drinksCollection.doc(item.key).get();
-        final drinkData = drinkDoc.data() as Map<String, dynamic>;
-        final price = drinkData['precio'];
-        final quantity = item.value;
-        final totalPrice = price * quantity;
-
-        orderDetails.add({
-          'nombre': drinkData['nombre'],
-          'cantidad': quantity,
-          'precioUnitario': price,
-          'precioTotal': totalPrice,
-        });
-
-        totalOrder += totalPrice;
-      }
-
       await FirebaseFirestore.instance.collection('pedidos').add({
-        'nombre_orden': _orderNameController.text,
+        'nombre_orden': widget.orderName,
         'items': orderDetails,
         'total_orden': totalOrder,
         'fecha_hora': FieldValue.serverTimestamp(),
@@ -66,7 +49,7 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error al enviar la orden.')),
+          SnackBar(content: Text('Error al enviar la orden: $e')),
         );
       }
     } finally {
@@ -78,83 +61,112 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
     }
   }
 
+  Future<Map<String, dynamic>> _getOrderSummary() async {
+    final details = <Map<String, dynamic>>[];
+    double totalOrder = 0;
+    final drinkIds = widget.orderItems.keys.toList();
+
+    if (drinkIds.isEmpty) return {'details': [], 'total': 0.0};
+
+    final drinksSnapshot = await FirebaseFirestore.instance
+        .collection('bebidas')
+        .where(FieldPath.documentId, whereIn: drinkIds)
+        .get();
+    final drinksData = {for (var doc in drinksSnapshot.docs) doc.id: doc.data()};
+
+    for (var item in widget.orderItems.entries) {
+      final drinkData = drinksData[item.key];
+      if (drinkData != null) {
+        final price = (drinkData['precio'] as num).toDouble();
+        final quantity = item.value;
+        final totalPrice = price * quantity;
+        totalOrder += totalPrice;
+
+        details.add({
+          'id': item.key,
+          'nombre': drinkData['nombre'],
+          'cantidad': quantity,
+          'precioUnitario': price,
+          'precioTotal': totalPrice,
+        });
+      }
+    }
+    return {'details': details, 'total': totalOrder};
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Resumen de la Orden'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            TextField(
-              controller: _orderNameController,
-              decoration: const InputDecoration(
-                labelText: 'Nombre de la Orden',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Expanded(
-              child: FutureBuilder<List<Map<String, dynamic>>>(
-                future: _buildOrderDetails(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: _getOrderSummary(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-                  if (snapshot.hasError) {
-                    return const Center(
-                        child: Text('Error al cargar los detalles de la orden.'));
-                  }
+          if (snapshot.hasError || !snapshot.hasData) {
+            return const Center(child: Text('Error al cargar el resumen.'));
+          }
 
-                  final orderDetails = snapshot.data!;
+          final orderDetails = snapshot.data!['details'] as List<Map<String, dynamic>>;
+          final total = snapshot.data!['total'] as double;
 
-                  return ListView.builder(
+          return Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Text(
+                    'Nombre: ${widget.orderName}',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
                     itemCount: orderDetails.length,
                     itemBuilder: (context, index) {
                       final item = orderDetails[index];
-                      return ListTile(
-                        title: Text(item['nombre']),
-                        subtitle: Text('Cantidad: ${item['cantidad']}'),
-                        trailing: Text('\$${item['precioTotal']}'),
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: ListTile(
+                          title: Text(item['nombre']),
+                          subtitle: Text('Cantidad: ${item['cantidad']}'),
+                          trailing: Text('\$${(item['precioTotal'] as double).toStringAsFixed(2)}'),
+                        ),
                       );
                     },
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 20),
-            _isLoading
-                ? const CircularProgressIndicator()
-                : ElevatedButton(
-                    onPressed: _placeOrder,
-                    child: const Text('Enviar Orden'),
                   ),
-          ],
-        ),
+                ),
+                const Divider(thickness: 2, height: 32),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Total:', style: Theme.of(context).textTheme.headlineMedium),
+                    Text('\$${total.toStringAsFixed(2)}',
+                        style: Theme.of(context).textTheme.headlineMedium),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : ElevatedButton(
+                        onPressed: () => _placeOrder(total, orderDetails),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 50),
+                        ),
+                        child: const Text('Enviar Orden'),
+                      ),
+              ],
+            ),
+          );
+        },
       ),
     );
-  }
-
-  Future<List<Map<String, dynamic>>> _buildOrderDetails() async {
-    final drinksCollection = FirebaseFirestore.instance.collection('bebidas');
-    final details = <Map<String, dynamic>>[];
-
-    for (var item in widget.orderItems.entries) {
-      final drinkDoc = await drinksCollection.doc(item.key).get();
-      final drinkData = drinkDoc.data() as Map<String, dynamic>;
-      final price = drinkData['precio'];
-      final quantity = item.value;
-      final totalPrice = price * quantity;
-
-      details.add({
-        'nombre': drinkData['nombre'],
-        'cantidad': quantity,
-        'precioTotal': totalPrice,
-      });
-    }
-    return details;
   }
 }
