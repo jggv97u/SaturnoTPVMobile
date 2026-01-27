@@ -11,11 +11,14 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cloud_firestore: ^4.17.3
-  firebase_core: ^2.31.0
+  cloud_firestore: ^4.17.5
+  firebase_core: ^2.32.0
   cupertino_icons: ^1.0.6
   intl: ^0.19.0
-  share_plus: ^12.0.1
+  share_plus: ^10.0.0
+  google_fonts: ^8.0.0
+  flutter_svg: ^2.0.7
+  firebase_auth: ^4.19.6
 
 dev_dependencies:
   flutter_test:
@@ -24,3 +27,15 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/
+
+  fonts:
+    - family: LemonMilk
+      fonts:
+        - asset: assets/LEMONMILK-Light.otf
+          weight: 300
+        - asset: assets/LEMONMILK-Medium.otf
+          weight: 500
+        - asset: assets/LEMONMILK-Bold.otf
+          weight: 700
