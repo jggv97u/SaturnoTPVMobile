@@ -1,5 +1,5 @@
-name: saturnotrc
-description: "A new Flutter project."
+name: saturnotpv
+description: "Punto de venta y sistema de gestión para Saturno."
 
 publish_to: 'none'
 
@@ -19,6 +19,7 @@ dependencies:
   google_fonts: ^8.0.0
   flutter_svg: ^2.0.7
   firebase_auth: ^4.19.6
+  fl_chart: ^0.68.0
 
 dev_dependencies:
   flutter_test:

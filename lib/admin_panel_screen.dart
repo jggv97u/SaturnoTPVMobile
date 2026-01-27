@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:saturnotrc/catalog_management_screen.dart';
-import 'package:saturnotrc/sales_report_screen.dart';
-import 'package:saturnotrc/user_management_screen.dart'; // Import the new screen
+import 'catalog_management_screen.dart';
+import 'sales_report_screen.dart';
+import 'user_management_screen.dart';
 
 class AdminPanelScreen extends StatelessWidget {
   const AdminPanelScreen({super.key});
@@ -17,9 +17,9 @@ class AdminPanelScreen extends StatelessWidget {
         children: [
           _buildAdminCard(
             context,
-            icon: Icons.bar_chart,
-            title: 'Reportes de Ventas',
-            subtitle: 'Visualiza ingresos, órdenes y métricas clave.',
+            icon: Icons.analytics,
+            title: 'Análisis de Rentabilidad',
+            subtitle: 'Ingresos, costos, gastos y ganancias.',
             onTap: () {
               Navigator.push(
                 context,

@@ -1,17 +1,46 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:saturnotrc/admin_panel_screen.dart';
-import 'package:saturnotrc/drinks_menu_screen.dart';
-import 'package:saturnotrc/order_detail_screen.dart';
+import 'admin_panel_screen.dart';
+import 'drinks_menu_screen.dart';
+import 'order_detail_screen.dart';
+import 'expense_screen.dart';
 
-class OrderListScreen extends StatelessWidget {
+class OrderListScreen extends StatefulWidget {
   const OrderListScreen({super.key});
+
+  @override
+  State<OrderListScreen> createState() => _OrderListScreenState();
+}
+
+class _OrderListScreenState extends State<OrderListScreen> {
+  bool _isAdmin = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAdminStatus();
+  }
+
+  Future<void> _checkAdminStatus() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      if (userDoc.exists && userDoc.data()!['isAdmin'] == true) {
+        if (mounted) {
+          setState(() {
+            _isAdmin = true;
+          });
+        }
+      }
+    }
+  }
 
   Future<void> _showPinDialog(BuildContext context) async {
     final pinController = TextEditingController();
-    const String adminPin = '1234';
+    const String adminPin = '1234'; // This should be more secure in a real app
 
     return showDialog<void>(
       context: context,
@@ -86,13 +115,14 @@ class OrderListScreen extends StatelessWidget {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.admin_panel_settings),
-            tooltip: 'Panel de Administración',
-            onPressed: () {
-              _showPinDialog(context);
-            },
-          ),
+          if (_isAdmin)
+            IconButton(
+              icon: const Icon(Icons.admin_panel_settings),
+              tooltip: 'Panel de Administración',
+              onPressed: () {
+                _showPinDialog(context);
+              },
+            ),
         ],
       ),
       body: StreamBuilder<QuerySnapshot>(
@@ -137,15 +167,35 @@ class OrderListScreen extends StatelessWidget {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const DrinksMenuScreen()),
-          );
-        },
-        tooltip: 'Nueva Orden',
-        child: const Icon(Icons.add),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_isAdmin)
+            FloatingActionButton.small(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ExpenseScreen()),
+                );
+              },
+              tooltip: 'Registrar Gasto',
+              heroTag: 'expense_fab',
+              child: const Icon(Icons.note_add_outlined),
+            ),
+          if (_isAdmin)
+            const SizedBox(height: 16),
+          FloatingActionButton.large(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const DrinksMenuScreen()),
+              );
+            },
+            tooltip: 'Nueva Orden',
+            heroTag: 'order_fab',
+            child: const Icon(Icons.add),
+          ),
+        ],
       ),
     );
   }

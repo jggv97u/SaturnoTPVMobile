@@ -1,7 +1,7 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:saturnotrc/order_summary_screen.dart';
+import 'order_summary_screen.dart';
 
 class DrinksMenuScreen extends StatefulWidget {
   final DocumentSnapshot? existingOrder;

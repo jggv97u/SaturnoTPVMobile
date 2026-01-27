@@ -51,7 +51,7 @@ $items
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
       ),
       body: FutureBuilder<DocumentSnapshot>(
-        future: FirebaseFirestore.instance.collection('pedidos').doc(orderId).get(),
+        future: FirebaseFirestore.instance.collection('ordenes_archivadas').doc(orderId).get(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());

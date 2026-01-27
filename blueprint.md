@@ -1,83 +1,31 @@
-# Blueprint de la Aplicación TPV Saturno
+# Blueprint de SaturnoTPV
 
-## Visión General
+## Descripción General
 
-**Saturno TPV** es una aplicación de Terminal de Punto de Venta (TPV) diseñada para ser rápida, intuitiva y robusta. Construida con Flutter y Firebase, la aplicación permite a los comerciantes gestionar órdenes de venta en tiempo real, desde su creación hasta su finalización y archivo.
+Este documento detalla el estado actual y las características de la aplicación SaturnoTPV, un punto de venta y sistema de gestión desarrollado en Flutter.
 
-El objetivo es proporcionar una herramienta que funcione de manera fluida tanto en dispositivos móviles como en la web, asegurando que los datos estén siempre sincronizados y accesibles gracias a la potencia de Firestore.
+## Estilo, Diseño y Características (Versión Inicial)
 
----
+Esta sección documenta el estado del proyecto después de los cambios iniciales de branding.
 
-## Características y Diseño Implementados
+*   **Nombre de la Aplicación:** `SaturnoTPV`
+*   **Descripción:** "Punto de venta y sistema de gestión para Saturno."
+*   **Ícono Principal:** Se utiliza un logo vectorial (`logo.svg`) ubicado en la carpeta `web/`. Este ícono se emplea como favicon y como ícono de la aplicación web instalable (PWA).
+*   **Plataforma Principal:** Aplicación web.
 
-Esta sección documenta el estado actual de la aplicación, reflejando las funcionalidades y decisiones de diseño que se han implementado.
+### Cambios Realizados:
 
-### 1. **Gestión de Órdenes Activas**
-   - **Pantalla Principal (`OrdersScreen`)**: Muestra una lista en tiempo real de todas las órdenes activas, obtenidas de la colección `ordenes_activas` de Firestore.
-   - **Diseño de la Lista**: Se utiliza un `StreamBuilder` para una actualización automática. Cada orden se presenta en una `Card` con un `ListTile` que muestra el nombre de la orden y un botón de acción.
-   - **Botón de Cobrar**: Cada orden tiene un botón que navega a la pantalla de pago (`PaymentScreen`), pasando la información completa de la orden seleccionada.
-   - **Estilo Visual**: La pantalla principal utiliza un `AppBar` con el título "Órdenes Activas Saturno" y un color de fondo `inversePrimary` del tema de Material 3, proporcionando una apariencia moderna y limpia.
+1.  **Renombrado del Proyecto:**
+    *   Se actualizó `pubspec.yaml` para reflejar el nuevo nombre `SaturnoTPV`.
+    *   Se modificó `web/index.html` para cambiar el título de la página.
+    *   Se ajustó `web/manifest.json` para establecer el `name` y `short_name` a `SaturnoTPV`.
 
-### 2. **Creación y Modificación de Órdenes (`DrinksMenuScreen`)**
-   - **Doble Funcionalidad**: Esta pantalla permite tanto crear una nueva orden desde cero como modificar una orden existente.
-   - **Modo Creación**: 
-     - El usuario puede seleccionar bebidas y asignarle un nombre a la nueva orden.
-     - El botón "Ver Orden" lo lleva a `OrderSummaryScreen` para confirmar y finalizar la creación.
-   - **Modo Modificación**:
-     - Se accede a este modo desde el botón "Modificar Orden" en `OrderDetailScreen`.
-     - La pantalla carga automáticamente el nombre y los productos de la orden existente.
-     - El botón cambia a "Guardar Cambios", y al presionarlo, se actualiza el documento de la orden en Firestore con los nuevos productos y el nuevo total, sin necesidad de pasar por la pantalla de resumen.
-   - **Campo de Nombre de Orden**: Se ha añadido un `TextField` para que el nombre de la orden pueda ser asignado o editado directamente desde esta pantalla.
+2.  **Personalización del Ícono:**
+    *   Se subió el archivo `logo.svg` a la carpeta `web/`.
+    *   Se actualizó `web/index.html` para usar `logo.svg` como favicon.
+    *   Se reconfiguró `web/manifest.json` para que el `logo.svg` sea el ícono principal de la aplicación, reemplazando los íconos PNG por defecto.
+    *   Se eliminaron los archivos de íconos PNG genéricos (`Icon-192.png`, `Icon-512.png`, etc.) y `favicon.png` para limpiar el proyecto.
 
-### 3. **Detalle de la Orden (`OrderDetailScreen`)**
-   - **Visualización Completa**: Muestra un desglose de todos los productos en una orden, con sus cantidades y precios, además del total.
-   - **Acciones Disponibles**:
-     - **Proceder al Pago**: Navega a `PaymentScreen`.
-     - **Modificar Orden**: Navega a `DrinksMenuScreen` en modo de edición.
-     - **Cancelar Orden**: Permite marcar una orden como inactiva, sacándola de la lista principal.
+## Plan de Cambios Actual
 
-### 4. **Resumen y Confirmación (`OrderSummaryScreen`)**
-   - **Confirmación de Nueva Orden**: Antes de crear una nueva orden, el usuario ve un resumen final.
-   - **Rendimiento Optimizado**: La pantalla ha sido refactorizada para realizar una única consulta a Firestore para obtener los detalles de todos los productos de la orden, en lugar de una consulta por producto. Esto mejora significativamente la velocidad y reduce los costos de lectura de la base de datos.
-   - **Visualización Clara**: Muestra el nombre de la orden y una lista detallada de los productos y el total antes de confirmar.
-
-### 5. **Proceso de Pago y Finalización (`PaymentScreen`)**
-   - **Navegación**: Al pulsar "Cobrar", el usuario es llevado a esta pantalla, que recibe el `DocumentSnapshot` de la orden.
-   - **Visualización del Total**: La pantalla muestra de forma prominente el monto total a pagar, extraído del campo `total_orden` del documento.
-   - **Métodos de Pago**: Se presentan botones para seleccionar el método de pago (Efectivo y Transferencia). El botón de Tarjeta está presente pero deshabilitado.
-   - **Lógica de Finalización de Orden**:
-     - Al seleccionar un método de pago, la aplicación ejecuta una transacción atómica (`WriteBatch` de Firestore).
-     - **Paso 1: Archivar la Orden**: Se crea un nuevo documento en la colección `ordenes_archivadas`. Este nuevo documento contiene toda la información de la orden original, más campos adicionales como `metodo_pago` y `fecha_finalizacion`.
-     - **Paso 2: Eliminar la Orden Activa**: El documento original de la colección `ordenes_activas` es eliminado.
-     - **Feedback al Usuario**: Se muestra una `SnackBar` para confirmar que la operación fue exitosa (`Orden finalizada y archivada`).
-   - **Manejo de Errores**: Se ha implementado un bloque `try-catch` robusto. Si la transacción falla, se muestra una `SnackBar` de error y se registra el error detallado en la consola del desarrollador usando `dart:developer` para facilitar la depuración.
-   - **Control de Estado**: Un indicador de carga (`CircularProgressIndicator`) se muestra mientras se procesa el pago para evitar que el usuario realice acciones duplicadas.
-
-### 6. **Pantalla de Nota de Venta y Compartir (`ReceiptScreen`)**
-   - **Flujo de Navegación**: Después de que una orden es finalizada exitosamente en `PaymentScreen`, la aplicación navega a la `ReceiptScreen` utilizando `pushAndRemoveUntil` para limpiar el historial de navegación y evitar que el usuario vuelva a la pantalla de pago.
-   - **Diseño de la Nota**: La pantalla presenta la información de la orden archivada en una `Card` con un diseño limpio y profesional. Muestra el nombre de la orden, la lista de artículos con sus precios, el total, y el método de pago.
-   - **Formato de Moneda**: Se utiliza el paquete `intl` (`NumberFormat.simpleCurrency`) para formatear todos los montos en moneda local (MXN), mejorando la legibilidad.
-   - **Botón de Compartir (`FloatingActionButton`)**: Un botón flotante con el ícono `share` permite al usuario volver a abrir el diálogo de compartición en cualquier momento.
-   - **Generación de Texto para Compartir**: La nota de texto para compartir ha sido mejorada con un formato más atractivo, incluyendo emojis y una estructura clara, para ser enviada por WhatsApp u otros medios.
-   - **Navegación de Cierre**: Un botón de "Cerrar" (`Icon(Icons.close)`) en el `AppBar` permite al usuario salir de la pantalla de la nota y volver a la pantalla principal (`OrderListScreen`) de una sola vez.
-
-### 7. **Estructura y Arquitectura**
-   - **Firebase Core**: El proyecto está configurado con `firebase_core` y `cloud_firestore` para la conectividad con la base de datos.
-   - **Punto de Entrada (`main.dart`)**: Inicializa Firebase y define el `MaterialApp` con las rutas y el tema de la aplicación.
-   - **Tema (Material 3)**: Se utiliza `ThemeData(useMaterial3: true)` con un `ColorScheme` generado a partir de un `seedColor` (actualmente `deepPurple`), lo que garantiza una estética consistente y moderna en toda la aplicación.
-
-### 8. **Modelo de Datos en Firestore**
-   - **`pedidos`**: Colección que almacena las órdenes.
-     - `nombre_orden` (String)
-     - `items` (Array de Maps)
-     - `total_orden` (Number)
-     - `fecha_hora` (Timestamp)
-     - `activa` (Boolean: `true` para activas, `false` para canceladas)
-     - `pagada` (Boolean: `true` o `false`)
-   - **`bebidas`**: Colección para el catálogo de productos.
-     - `nombre` (String)
-     - `precio` (Number)
-     - `categoria` (String)
-     - `inStock` (Boolean)
-
----
+*No hay cambios pendientes en este momento.*

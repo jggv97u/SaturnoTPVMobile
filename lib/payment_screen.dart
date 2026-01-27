@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:saturnotrc/receipt_screen.dart';
+import 'receipt_screen.dart';
+import 'dart:developer' as developer;
 
 class PaymentScreen extends StatefulWidget {
   final DocumentSnapshot order;
@@ -12,7 +13,32 @@ class PaymentScreen extends StatefulWidget {
 }
 
 class _PaymentScreenState extends State<PaymentScreen> {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   bool _isProcessing = false;
+
+  Future<void> _showErrorDialog(String errorMessage) {
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Error Crítico en el Pago'),
+          content: SingleChildScrollView(
+            child: Text(
+              'No se pudo archivar la venta. La orden no ha sido modificada y sigue activa.\n\nDetalle del error:\n$errorMessage',
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Aceptar'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   Future<void> _finalizePayment(String paymentMethod) async {
     setState(() {
@@ -20,12 +46,62 @@ class _PaymentScreenState extends State<PaymentScreen> {
     });
 
     try {
-      await widget.order.reference.update({
+      final orderData = widget.order.data() as Map<String, dynamic>;
+      final List<dynamic> items = List.from(orderData['items'] ?? []);
+
+      if (items.isEmpty) {
+        throw Exception('La orden no tiene productos para procesar.');
+      }
+      
+      double totalCosto = 0.0;
+      List<Map<String, dynamic>> itemsConCosto = [];
+
+      for (var item in items) {
+        final itemMap = Map<String, dynamic>.from(item as Map);
+        final productId = itemMap['id'];
+        final cantidad = (itemMap['cantidad'] ?? 0) as num;
+        double costoUnitario = 0.0;
+
+        if (productId != null) {
+          final productDoc = await _firestore.collection('bebidas').doc(productId).get();
+          if (productDoc.exists) {
+            final productData = productDoc.data() as Map<String, dynamic>;
+            costoUnitario = (productData['costo'] ?? 0.0).toDouble();
+          } else {
+            developer.log('Producto con ID: $productId no encontrado en el catálogo.', name: 'saturnotrc.payment');
+          }
+        }
+        
+        itemMap['costo_unitario'] = costoUnitario;
+        itemsConCosto.add(itemMap);
+        totalCosto += costoUnitario * cantidad;
+      }
+      
+      // --- ATOMIC TRANSACTION: Move order from 'pedidos' to 'ordenes_archivadas' ---
+      final WriteBatch batch = _firestore.batch();
+
+      // 1. Create a reference for the new document in 'ordenes_archivadas'
+      final newArchivedOrderRef = _firestore.collection('ordenes_archivadas').doc(widget.order.id);
+
+      // 2. Prepare the complete data for the archived order
+      final archivedOrderData = {
+        ...orderData, // Copy all original data
         'pagada': true,
-        'activa': false, 
+        'activa': false,
         'metodo_pago': paymentMethod,
         'fecha_finalizacion': FieldValue.serverTimestamp(),
-      });
+        'items': itemsConCosto,
+        'total_costo': totalCosto,
+      };
+
+      // 3. Set the data for the new archived order in the batch
+      batch.set(newArchivedOrderRef, archivedOrderData);
+
+      // 4. Delete the original order from 'pedidos' in the batch
+      batch.delete(widget.order.reference);
+
+      // 5. Commit the atomic operation
+      await batch.commit();
 
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
@@ -35,12 +111,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
           (Route<dynamic> route) => route.isFirst,
         );
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error al finalizar el pago.')),
+    } catch (e, s) {
+        developer.log(
+            'Error al archivar la venta.',
+            name: 'saturnotrc.payment.archive',
+            error: e,
+            stackTrace: s,
         );
-      }
+        if (mounted) {
+            await _showErrorDialog(e.toString());
+        }
     } finally {
       if (mounted) {
         setState(() {

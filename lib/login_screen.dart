@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:saturnotrc/orders_screen.dart';
+import 'orders_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
