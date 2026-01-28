@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'orders_screen.dart';
+import 'admin_panel_screen.dart'; // CORREGIDO
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,19 +29,23 @@ class _LoginScreenState extends State<LoginScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
-
+      
+      // AuthGate se encargará de la navegación, por lo que esta navegación explícita
+      // podría ser redundante, pero la mantenemos para asegurar la transición inmediata.
       if (mounted) {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const OrderListScreen()),
+          MaterialPageRoute(builder: (context) => const AdminPanelScreen()), // CORREGIDO
         );
       }
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message ?? 'Error de autenticación.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if(mounted){
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message ?? 'Error de autenticación.'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -51,7 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _showCreateAdminDialog() async {
+   Future<void> _showCreateAdminDialog() async {
     final formKey = GlobalKey<FormState>();
     final emailController = TextEditingController();
     final passwordController = TextEditingController();
@@ -92,14 +96,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 onPressed: () async {
                   if (formKey.currentState!.validate()) {
                     try {
-                      // Create user in Auth
                       UserCredential userCredential =
                           await FirebaseAuth.instance.createUserWithEmailAndPassword(
                         email: emailController.text.trim(),
                         password: passwordController.text.trim(),
                       );
 
-                      // Create user document in Firestore with 'admin' role
                       await FirebaseFirestore.instance
                           .collection('users')
                           .doc(userCredential.user!.uid)
@@ -108,7 +110,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         'role': 'admin',
                       });
 
-                      Navigator.of(context).pop(); // Close dialog
+                      Navigator.of(context).pop();
 
                     } on FirebaseAuthException catch (e) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -123,6 +125,7 @@ class _LoginScreenState extends State<LoginScreen> {
           );
         });
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -160,24 +163,24 @@ class _LoginScreenState extends State<LoginScreen> {
                     controller: _emailController,
                     decoration: const InputDecoration(
                       labelText: 'Correo Electrónico',
-                      prefixIcon: Icon(Icons.email),
+                      prefixIcon: Icon(Icons.email_outlined),
                       border: OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.emailAddress,
                     validator: (value) =>
-                        value!.isEmpty ? 'Introduce tu correo' : null,
+                        (value == null || value.isEmpty) ? 'Introduce tu correo' : null,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _passwordController,
                     decoration: const InputDecoration(
                       labelText: 'Contraseña',
-                      prefixIcon: Icon(Icons.lock),
+                      prefixIcon: Icon(Icons.lock_outline),
                       border: OutlineInputBorder(),
                     ),
                     obscureText: true,
                     validator: (value) =>
-                        value!.isEmpty ? 'Introduce tu contraseña' : null,
+                        (value == null || value.isEmpty) ? 'Introduce tu contraseña' : null,
                   ),
                   const SizedBox(height: 24),
                   _isLoading
@@ -187,26 +190,26 @@ class _LoginScreenState extends State<LoginScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 16),
                           ),
                           onPressed: _login,
-                          child: const Text('Iniciar Sesión'),
+                          child: const Text('Iniciar Sesión', style: TextStyle(fontSize: 16)),
                         ),
                   const SizedBox(height: 16),
                   FutureBuilder<QuerySnapshot>(
                     future: FirebaseFirestore.instance.collection('users').limit(1).get(),
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const SizedBox.shrink(); // Don't show anything while loading
+                        return const SizedBox.shrink(); 
                       }
                       if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                        // If no users exist, show the button to create the first admin
                         return TextButton(
                           onPressed: _showCreateAdminDialog,
                           child: const Text(
                             'Crear Cuenta de Administrador Principal',
+                            textAlign: TextAlign.center,
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                         );
                       }
-                      return const SizedBox.shrink(); // Hide button if users exist
+                      return const SizedBox.shrink();
                     },
                   ),
                 ],

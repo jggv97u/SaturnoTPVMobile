@@ -1,6 +1,7 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'models/customer.dart';
 import 'order_summary_screen.dart';
 
 class DrinksMenuScreen extends StatefulWidget {
@@ -16,6 +17,7 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
   final Map<String, int> _orderItems = {};
   final _orderNameController = TextEditingController();
   bool _isSaving = false;
+  Customer? _selectedCustomer;
 
   @override
   void initState() {
@@ -27,6 +29,18 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
       for (var item in items) {
         _orderItems[item['id']] = item['cantidad'];
       }
+      if (orderData.containsKey('cliente_id') && orderData['cliente_id'] != null) {
+        _loadCustomer(orderData['cliente_id']);
+      }
+    }
+  }
+
+  Future<void> _loadCustomer(String customerId) async {
+    final doc = await FirebaseFirestore.instance.collection('clientes').doc(customerId).get();
+    if (doc.exists) {
+      setState(() {
+        _selectedCustomer = Customer.fromFirestore(doc);
+      });
     }
   }
 
@@ -52,6 +66,19 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
         }
       }
     });
+  }
+
+  Future<void> _showCustomerSearchDialog() async {
+    final selected = await showDialog<Customer>(
+      context: context,
+      builder: (context) => const CustomerSearchDialog(),
+    );
+
+    if (selected != null) {
+      setState(() {
+        _selectedCustomer = selected;
+      });
+    }
   }
 
   Future<void> _updateOrder() async {
@@ -96,6 +123,8 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
         'nombre_orden': _orderNameController.text,
         'items': updatedItems,
         'total_orden': newTotal,
+        'cliente_id': _selectedCustomer?.id,
+        'cliente_nombre': _selectedCustomer?.nombre,
         'fecha_actualizacion': FieldValue.serverTimestamp(),
       });
 
@@ -132,7 +161,7 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: TextField(
               controller: _orderNameController,
               decoration: const InputDecoration(
@@ -141,6 +170,27 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
               ),
             ),
           ),
+          // Customer Selector UI
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+            child: InkWell(
+              onTap: _showCustomerSearchDialog,
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Cliente',
+                  border: OutlineInputBorder(),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: <Widget>[
+                    Text(_selectedCustomer?.nombre ?? 'Seleccionar un cliente'),
+                    const Icon(Icons.arrow_drop_down),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
@@ -163,7 +213,6 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
 
                 return ListView(
                   children: sortedEntries.map((entry) {
-                    // Explicitly sort the drinks within each category
                     final sortedDrinks = entry.value..sort((a, b) {
                       final aName = (a.data() as Map<String, dynamic>)['nombre'] as String;
                       final bName = (b.data() as Map<String, dynamic>)['nombre'] as String;
@@ -174,7 +223,7 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Padding(
-                          padding: const EdgeInsets.all(16.0),
+                          padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
                           child: Text(
                             entry.key,
                             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -182,43 +231,45 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
                                 ),
                           ),
                         ),
-                        ...sortedDrinks.map((drink) { // Use the newly sorted list
+                        ...sortedDrinks.map((drink) {
                           final drinkId = drink.id;
                           final drinkData = drink.data() as Map<String, dynamic>;
                           final quantity = _orderItems[drinkId] ?? 0;
 
                           return Card(
-                            margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                            margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
                             child: Padding(
-                              padding: const EdgeInsets.all(16.0),
+                              padding: const EdgeInsets.all(12.0),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        drinkData['nombre'],
-                                        style: Theme.of(context).textTheme.titleMedium,
-                                      ),
-                                      Text(
-                                        '\$${drinkData['precio']}',
-                                        style: Theme.of(context).textTheme.bodyMedium,
-                                      ),
-                                    ],
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          drinkData['nombre'],
+                                          style: Theme.of(context).textTheme.titleMedium,
+                                        ),
+                                        Text(
+                                          '\$${drinkData['precio']}',
+                                          style: Theme.of(context).textTheme.bodySmall,
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                   Row(
                                     children: [
                                       IconButton(
-                                        icon: const Icon(Icons.remove_circle_outline),
+                                        icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent),
                                         onPressed: () => _removeItem(drinkId),
                                       ),
                                       Text(
                                         '$quantity',
-                                        style: Theme.of(context).textTheme.titleMedium,
+                                        style: Theme.of(context).textTheme.titleLarge,
                                       ),
                                       IconButton(
-                                        icon: const Icon(Icons.add_circle_outline),
+                                        icon: const Icon(Icons.add_circle_outline, color: Colors.greenAccent),
                                         onPressed: () => _addItem(drinkId),
                                       ),
                                     ],
@@ -249,6 +300,7 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
                             builder: (context) => OrderSummaryScreen(
                               orderItems: _orderItems,
                               orderName: _orderNameController.text,
+                              customer: _selectedCustomer,
                             ),
                           ),
                         );
@@ -256,10 +308,90 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
                     },
               label: Text(isEditing ? 'Guardar Cambios' : 'Ver Orden'),
               icon: _isSaving
-                  ? const CircularProgressIndicator(color: Colors.white)
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.black))
                   : Icon(isEditing ? Icons.save : Icons.shopping_cart),
             )
           : null,
+    );
+  }
+}
+
+// Dialog for searching customers
+class CustomerSearchDialog extends StatefulWidget {
+  const CustomerSearchDialog({super.key});
+
+  @override
+  State<CustomerSearchDialog> createState() => _CustomerSearchDialogState();
+}
+
+class _CustomerSearchDialogState extends State<CustomerSearchDialog> {
+  String _searchQuery = '';
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Buscar Cliente'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            TextField(
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
+              decoration: const InputDecoration(
+                labelText: 'Buscar por nombre...',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance.collection('clientes').snapshots(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+
+                  var filteredDocs = snapshot.data!.docs.where((doc) {
+                    final customerName = (doc.data() as Map<String, dynamic>)['nombre'].toString().toLowerCase();
+                    return customerName.contains(_searchQuery.toLowerCase());
+                  }).toList();
+
+                  if (filteredDocs.isEmpty) {
+                    return const Center(child: Text('No se encontraron clientes.'));
+                  }
+
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: filteredDocs.length,
+                    itemBuilder: (context, index) {
+                      final customer = Customer.fromFirestore(filteredDocs[index]);
+                      return ListTile(
+                        title: Text(customer.nombre),
+                        subtitle: Text(customer.telefono),
+                        onTap: () {
+                          Navigator.of(context).pop(customer);
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          child: const Text('Cancelar'),
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+        ),
+      ],
     );
   }
 }

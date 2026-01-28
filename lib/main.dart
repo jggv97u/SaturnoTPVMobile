@@ -1,10 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'admin_panel_screen.dart';
+import 'customer_management_screen.dart';
 import 'expense_screen.dart';
 import 'firebase_options.dart';
 import 'login_screen.dart';
-import 'orders_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +32,7 @@ class MyApp extends StatelessWidget {
 
     return MaterialApp(
       title: 'Saturno TPV',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
@@ -77,7 +79,8 @@ class MyApp extends StatelessWidget {
       ),
       home: const AuthGate(),
       routes: {
-        '/expenses': (context) => const ExpenseScreen(), // Example route
+        '/expenses': (context) => const ExpenseScreen(),
+        '/customers': (context) => const CustomerManagementScreen(),
       },
     );
   }
@@ -98,9 +101,11 @@ class AuthGate extends StatelessWidget {
         }
 
         if (snapshot.hasData) {
-          return const OrderListScreen();
+          // Si el usuario está autenticado, lo llevamos al Panel de Administración.
+          return const AdminPanelScreen();
         }
 
+        // Si no, a la pantalla de Login.
         return const LoginScreen();
       },
     );

@@ -48,60 +48,85 @@ class _PaymentScreenState extends State<PaymentScreen> {
     try {
       final orderData = widget.order.data() as Map<String, dynamic>;
       final List<dynamic> items = List.from(orderData['items'] ?? []);
+      final customerId = orderData['cliente_id'];
 
       if (items.isEmpty) {
         throw Exception('La orden no tiene productos para procesar.');
       }
-      
-      double totalCosto = 0.0;
-      List<Map<String, dynamic>> itemsConCosto = [];
 
-      for (var item in items) {
-        final itemMap = Map<String, dynamic>.from(item as Map);
-        final productId = itemMap['id'];
-        final cantidad = (itemMap['cantidad'] ?? 0) as num;
-        double costoUnitario = 0.0;
+      await _firestore.runTransaction((transaction) async {
+        final DocumentReference orderRef = widget.order.reference;
+        DocumentReference? customerRef;
+        DocumentSnapshot? customerDoc;
 
-        if (productId != null) {
-          final productDoc = await _firestore.collection('bebidas').doc(productId).get();
-          if (productDoc.exists) {
-            final productData = productDoc.data() as Map<String, dynamic>;
-            costoUnitario = (productData['costo'] ?? 0.0).toDouble();
-          } else {
-            developer.log('Producto con ID: $productId no encontrado en el catálogo.', name: 'saturnotrc.payment');
+        // 1. Calculate points and costs
+        int pointsEarned = 0;
+        double totalCosto = 0.0;
+        List<Map<String, dynamic>> itemsConCosto = [];
+
+        for (var item in items) {
+          final itemMap = Map<String, dynamic>.from(item as Map);
+          final productId = itemMap['id'];
+          final cantidad = (itemMap['cantidad'] ?? 0) as int; // Each drink is a point
+          pointsEarned += cantidad;
+          double costoUnitario = 0.0;
+
+          if (productId != null) {
+             final productDocRef = _firestore.collection('bebidas').doc(productId);
+             final productDoc = await transaction.get(productDocRef); // Get product within transaction
+            if (productDoc.exists) {
+              final productData = productDoc.data() as Map<String, dynamic>;
+              costoUnitario = (productData['costo'] ?? 0.0).toDouble();
+            } else {
+              developer.log('Producto con ID: $productId no encontrado.', name: 'saturnotrc.payment');
+            }
+          }
+          itemMap['costo_unitario'] = costoUnitario;
+          itemsConCosto.add(itemMap);
+          totalCosto += costoUnitario * cantidad;
+        }
+
+        // 2. Handle customer points if a customer is linked
+        if (customerId != null) {
+          customerRef = _firestore.collection('clientes').doc(customerId);
+          customerDoc = await transaction.get(customerRef); // Get customer within transaction
+
+          if (customerDoc.exists) {
+            final customerData = customerDoc!.data() as Map<String, dynamic>;
+            final currentPoints = (customerData['puntos'] ?? 0) as int;
+            final newTotalPoints = currentPoints + pointsEarned;
+
+            if (newTotalPoints >= 7) {
+              // Reward achieved
+              transaction.update(customerRef, {
+                'puntos': 0, // Reset points
+                'recompensas': FieldValue.increment(1),
+                'ultima_recompensa': FieldValue.serverTimestamp(),
+              });
+            } else {
+              // Just increment points
+              transaction.update(customerRef, {'puntos': newTotalPoints});
+            }
           }
         }
         
-        itemMap['costo_unitario'] = costoUnitario;
-        itemsConCosto.add(itemMap);
-        totalCosto += costoUnitario * cantidad;
-      }
-      
-      // --- ATOMIC TRANSACTION: Move order from 'pedidos' to 'ordenes_archivadas' ---
-      final WriteBatch batch = _firestore.batch();
+        // 3. Archive the order
+        final newArchivedOrderRef = _firestore.collection('ordenes_archivadas').doc(orderRef.id);
+        final archivedOrderData = {
+          ...orderData,
+          'pagada': true,
+          'activa': false,
+          'metodo_pago': paymentMethod,
+          'fecha_finalizacion': FieldValue.serverTimestamp(),
+          'items': itemsConCosto,
+          'total_costo': totalCosto,
+          'puntos_ganados': pointsEarned,
+        };
+        transaction.set(newArchivedOrderRef, archivedOrderData);
 
-      // 1. Create a reference for the new document in 'ordenes_archivadas'
-      final newArchivedOrderRef = _firestore.collection('ordenes_archivadas').doc(widget.order.id);
-
-      // 2. Prepare the complete data for the archived order
-      final archivedOrderData = {
-        ...orderData, // Copy all original data
-        'pagada': true,
-        'activa': false,
-        'metodo_pago': paymentMethod,
-        'fecha_finalizacion': FieldValue.serverTimestamp(),
-        'items': itemsConCosto,
-        'total_costo': totalCosto,
-      };
-
-      // 3. Set the data for the new archived order in the batch
-      batch.set(newArchivedOrderRef, archivedOrderData);
-
-      // 4. Delete the original order from 'pedidos' in the batch
-      batch.delete(widget.order.reference);
-
-      // 5. Commit the atomic operation
-      await batch.commit();
+        // 4. Delete the original active order
+        transaction.delete(orderRef);
+      });
 
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
@@ -112,15 +137,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
         );
       }
     } catch (e, s) {
-        developer.log(
-            'Error al archivar la venta.',
-            name: 'saturnotrc.payment.archive',
-            error: e,
-            stackTrace: s,
-        );
-        if (mounted) {
-            await _showErrorDialog(e.toString());
-        }
+      developer.log(
+        'Error al archivar la venta.',
+        name: 'saturnotrc.payment.archive',
+        error: e,
+        stackTrace: s,
+      );
+      if (mounted) {
+        await _showErrorDialog(e.toString());
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -129,6 +154,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       }
     }
   }
+
 
   @override
   Widget build(BuildContext context) {

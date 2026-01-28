@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'models/customer.dart'; // Import the customer model
 
 class OrderSummaryScreen extends StatefulWidget {
   final Map<String, int> orderItems;
   final String orderName;
+  final Customer? customer; // Add customer parameter
 
   const OrderSummaryScreen({
     super.key,
     required this.orderItems,
     required this.orderName,
+    this.customer, // Make it optional
   });
 
   @override
@@ -31,19 +34,26 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
     });
 
     try {
-      await FirebaseFirestore.instance.collection('pedidos').add({
+      // Prepare the data to be saved
+      final Map<String, dynamic> orderData = {
         'nombre_orden': widget.orderName,
         'items': orderDetails,
         'total_orden': totalOrder,
         'fecha_hora': FieldValue.serverTimestamp(),
         'activa': true,
         'pagada': false,
-      });
+        // Add customer data if available
+        'cliente_id': widget.customer?.id,
+        'cliente_nombre': widget.customer?.nombre,
+      };
+
+      await FirebaseFirestore.instance.collection('pedidos').add(orderData);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Orden enviada con éxito.')),
         );
+        // Go back to the root screen (admin panel)
         Navigator.of(context).popUntil((route) => route.isFirst);
       }
     } catch (e) {
@@ -68,6 +78,7 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
 
     if (drinkIds.isEmpty) return {'details': [], 'total': 0.0};
 
+    // Fetch all required drinks in a single query
     final drinksSnapshot = await FirebaseFirestore.instance
         .collection('bebidas')
         .where(FieldPath.documentId, whereIn: drinkIds)
@@ -120,11 +131,33 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: Text(
-                    'Nombre: ${widget.orderName}',
-                    style: Theme.of(context).textTheme.headlineSmall,
+                Card(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.orderName,
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        if (widget.customer != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.person, size: 18, color: Colors.white70),
+                                const SizedBox(width: 8),
+                                Text(
+                                  widget.customer!.nombre,
+                                  style: Theme.of(context).textTheme.titleMedium,
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
                 Expanded(
@@ -144,23 +177,30 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
                   ),
                 ),
                 const Divider(thickness: 2, height: 32),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Total:', style: Theme.of(context).textTheme.headlineMedium),
-                    Text('\$${total.toStringAsFixed(2)}',
-                        style: Theme.of(context).textTheme.headlineMedium),
-                  ],
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Total:', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      Text('\$${total.toStringAsFixed(2)}',
+                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.secondary
+                          )),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
                 _isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : ElevatedButton(
+                    : ElevatedButton.icon(
                         onPressed: () => _placeOrder(total, orderDetails),
                         style: ElevatedButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 50),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
-                        child: const Text('Enviar Orden'),
+                        icon: const Icon(Icons.send),
+                        label: const Text('Enviar Orden', style: TextStyle(fontSize: 18)),
                       ),
               ],
             ),
