@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:fl_chart/fl_chart.dart';
 
-import 'detailed_report_screen.dart'; 
+import 'detailed_report_screen.dart';
+
+enum DateFilter { today, thisWeek, thisMonth, custom }
 
 class SalesReportScreen extends StatefulWidget {
   const SalesReportScreen({super.key});
@@ -14,6 +17,7 @@ class SalesReportScreen extends StatefulWidget {
 class _SalesReportScreenState extends State<SalesReportScreen> {
   DateTime? _startDate;
   DateTime? _endDate;
+  DateFilter _selectedFilter = DateFilter.today;
   Key _streamKey = UniqueKey();
 
   List<Map<String, dynamic>> _salesData = [];
@@ -23,19 +27,41 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
   @override
   void initState() {
     super.initState();
-    _resetToToday();
+    _setFilter(DateFilter.today);
   }
 
-  void _resetToToday() {
+  void _setFilter(DateFilter filter) {
     final now = DateTime.now();
-    _startDate = DateTime(now.year, now.month, now.day);
-    _endDate = DateTime(now.year, now.month, now.day, 23, 59, 59);
+    setState(() {
+      _selectedFilter = filter;
+      switch (filter) {
+        case DateFilter.today:
+          _startDate = DateTime(now.year, now.month, now.day);
+          _endDate = DateTime(now.year, now.month, now.day, 23, 59, 59);
+          break;
+        case DateFilter.thisWeek:
+          final weekDay = now.weekday;
+          _startDate = DateTime(now.year, now.month, now.day - (weekDay - 1));
+          _endDate = DateTime(now.year, now.month, now.day + (7 - weekDay), 23, 59, 59);
+          break;
+        case DateFilter.thisMonth:
+          _startDate = DateTime(now.year, now.month, 1);
+          _endDate = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+          break;
+        case DateFilter.custom:
+          // No action needed, user will pick dates
+          break;
+      }
+      if (filter != DateFilter.custom) {
+        _applyFilter();
+      }
+    });
   }
 
   Future<void> _selectDate(BuildContext context, bool isStartDate) async {
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: isStartDate ? _startDate! : _endDate!,
+      initialDate: isStartDate ? _startDate ?? DateTime.now() : _endDate ?? DateTime.now(),
       firstDate: DateTime(2020),
       lastDate: DateTime(2101),
       locale: const Locale('es', 'MX'),
@@ -52,12 +78,14 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
   }
 
   void _applyFilter() {
-    setState(() {
-      _salesData = [];
-      _expenseData = [];
-      _reportData = {};
-      _streamKey = UniqueKey();
-    });
+    if (_startDate != null && _endDate != null) {
+      setState(() {
+        _salesData = [];
+        _expenseData = [];
+        _reportData = {};
+        _streamKey = UniqueKey();
+      });
+    }
   }
 
   @override
@@ -71,37 +99,57 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () => _selectDate(context, true),
-                        icon: const Icon(Icons.calendar_today),
-                        label: Text('Inicio: \${dateFormat.format(_startDate!)}'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () => _selectDate(context, false),
-                        icon: const Icon(Icons.calendar_today),
-                        label: Text('Fin: \${dateFormat.format(_endDate!)}'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                ElevatedButton(
-                  onPressed: _applyFilter,
-                  child: const Text('Aplicar Filtro'),
-                ),
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+            child: SegmentedButton<DateFilter>(
+              style: SegmentedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                textStyle: Theme.of(context).textTheme.titleSmall,
+              ),
+              segments: const <ButtonSegment<DateFilter>>[
+                ButtonSegment<DateFilter>(value: DateFilter.today, label: Text('Hoy')),
+                ButtonSegment<DateFilter>(value: DateFilter.thisWeek, label: Text('Semana')),
+                ButtonSegment<DateFilter>(value: DateFilter.thisMonth, label: Text('Mes')),
+                ButtonSegment<DateFilter>(value: DateFilter.custom, label: Text('Personal.'), icon: Icon(Icons.calendar_month_outlined)),
               ],
+              selected: {_selectedFilter},
+              onSelectionChanged: (Set<DateFilter> newSelection) {
+                _setFilter(newSelection.first);
+              },
             ),
           ),
+          if (_selectedFilter == DateFilter.custom)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _selectDate(context, true),
+                          icon: const Icon(Icons.calendar_today),
+                          label: Text('Inicio: ${_startDate != null ? dateFormat.format(_startDate!) : '...'}'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _selectDate(context, false),
+                          icon: const Icon(Icons.calendar_today),
+                          label: Text('Fin: ${_endDate != null ? dateFormat.format(_endDate!) : '...'}'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: (_startDate != null && _endDate != null) ? _applyFilter : null,
+                    child: const Text('Aplicar Filtro'),
+                  ),
+                ],
+              ),
+            ),
           const Divider(height: 1),
           Expanded(
             child: StreamBuilder<Map<String, QuerySnapshot>>(
@@ -112,29 +160,15 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
-                  return Center(child: Text('Error al cargar datos: \${snapshot.error}'));
+                  return Center(child: Text('Error al cargar datos: ${snapshot.error}'));
                 }
-                if (!snapshot.hasData) {
-                   return const Center(child: Text('No hay datos disponibles.'));
+                if (!snapshot.hasData || (snapshot.data!['sales']!.docs.isEmpty && snapshot.data!['expenses']!.docs.isEmpty)) {
+                  return const Center(child: Text('No hay datos disponibles en este rango.'));
                 }
 
-                // *** ULTIMATE FIX: Wrap all calculation logic in a try-catch block ***
                 try {
-                  final salesDocs = snapshot.data!['sales']?.docs ?? [];
-                  final expenseDocs = snapshot.data!['expenses']?.docs ?? [];
-
-                  _salesData = salesDocs
-                      .where((doc) => doc.exists && doc.data() != null)
-                      .map((doc) => doc.data() as Map<String, dynamic>)
-                      .toList();
-                  _expenseData = expenseDocs
-                      .where((doc) => doc.exists && doc.data() != null)
-                      .map((doc) => doc.data() as Map<String, dynamic>)
-                      .toList();
-
-                  if (_salesData.isEmpty && _expenseData.isEmpty) {
-                    return const Center(child: Text('No hay datos disponibles en este rango.'));
-                  }
+                  _salesData = snapshot.data!['sales']!.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
+                  _expenseData = snapshot.data!['expenses']!.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
 
                   final double totalRevenue = _salesData.fold(0.0, (sum, item) => sum + (item['total_orden'] as num? ?? 0));
                   final double totalCost = _salesData.fold(0.0, (sum, item) => sum + (item['total_costo'] as num? ?? 0));
@@ -156,11 +190,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                     totalExpenses += amount;
                   }
                   
-                  double netProfit = 0;
-                  profitDistributionBudget.forEach((category, budget) {
-                    final spent = expensesByCategory[category] ?? 0;
-                    netProfit += (budget - spent);
-                  });
+                  double netProfit = grossProfit - totalExpenses;
 
                   _reportData = {
                     'totalRevenue': totalRevenue,
@@ -171,6 +201,19 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                     'expensesByCategory': expensesByCategory,
                     'profitDistribution': profitDistributionBudget,
                   };
+                  
+                  final Map<String, int> topDrinks = {};
+                  for (var sale in _salesData) {
+                      final List<dynamic> items = sale['items'] ?? [];
+                      for (var item in items) {
+                          final String name = item['nombre'] ?? 'Bebida desconocida';
+                          final int quantity = (item['cantidad'] as num? ?? 0).toInt();
+                          topDrinks.update(name, (value) => value + quantity, ifAbsent: () => quantity);
+                      }
+                  }
+
+                  final sortedDrinks = topDrinks.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+                  final top5Drinks = sortedDrinks.take(5).toList();
 
                   return SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
@@ -178,17 +221,20 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                       children: [
                         _buildSummaryCards(totalRevenue, totalCost, totalExpenses, netProfit),
                         const SizedBox(height: 24),
+                        _buildFinancialSummaryChart(context, totalRevenue, totalCost, totalExpenses),
+                        const SizedBox(height: 24),
+                        _buildTopDrinksChart(context, top5Drinks),
+                        const SizedBox(height: 24),
                         _buildDistributionSection(context, 'Presupuesto vs. Gasto por Cuenta', profitDistributionBudget, expensesByCategory),
                       ],
                     ),
                   );
                 } catch (e, stackTrace) {
-                  // If any error occurs during processing, show it on screen
                   return Center(
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Text(
-                        'Ocurrió un error al procesar los datos. Esto puede deberse a un registro con formato incorrecto en la base de datos.\n\nError: $e',
+                        'Ocurrió un error al procesar los datos.\nError: $e\nStack: $stackTrace',
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -202,7 +248,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
       floatingActionButton: (_salesData.isNotEmpty || _expenseData.isNotEmpty)
           ? FloatingActionButton.extended(
               onPressed: () {
-                 if (_startDate == null || _endDate == null || _reportData.isEmpty) return;
+                if (_startDate == null || _endDate == null || _reportData.isEmpty) return;
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -230,6 +276,9 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
   }
 
   Stream<Map<String, QuerySnapshot>> _fetchData() {
+    if (_startDate == null || _endDate == null) {
+      return Stream.value({});
+    }
     final salesStream = FirebaseFirestore.instance
         .collection('ordenes_archivadas')
         .where('fecha_finalizacion', isGreaterThanOrEqualTo: _startDate)
@@ -291,6 +340,230 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildFinancialSummaryChart(BuildContext context, double revenue, double cost, double expense) {
+    final currencyFormat = NumberFormat.compactSimpleCurrency(locale: 'es_MX');
+    final maxValue = [revenue, cost, expense].reduce((a, b) => a > b ? a : b) * 1.2;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Resumen Financiero',
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 250,
+          child: Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            clipBehavior: Clip.antiAlias,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: BarChart(
+                BarChartData(
+                  alignment: BarChartAlignment.spaceAround,
+                  maxY: maxValue > 0 ? maxValue : 100,
+                  barTouchData: BarTouchData(
+                    touchTooltipData: BarTouchTooltipData(
+                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                        final value = rod.toY;
+                        return BarTooltipItem(
+                          NumberFormat.simpleCurrency(locale: 'es_MX').format(value),
+                          const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        );
+                      },
+                    ),
+                  ),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (double value, TitleMeta meta) {
+                          const style = TextStyle(fontWeight: FontWeight.bold, fontSize: 14);
+                          String text;
+                          switch (value.toInt()) {
+                            case 0:
+                              text = 'Ingresos';
+                              break;
+                            case 1:
+                              text = 'Costos';
+                              break;
+                            case 2:
+                              text = 'Gastos';
+                              break;
+                            default:
+                              text = '';
+                              break;
+                          }
+                          return SideTitleWidget(axisSide: meta.axisSide, child: Text(text, style: style));
+                        },
+                        reservedSize: 30,
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 45,
+                        getTitlesWidget: (double value, TitleMeta meta) {
+                          if (value == meta.max || value == 0) return Container();
+                          return SideTitleWidget(
+                            axisSide: meta.axisSide,
+                            space: 5,
+                            child: Text(
+                              currencyFormat.format(value),
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  gridData: FlGridData(
+                    show: true,
+                    checkToShowHorizontalLine: (value) => value % (maxValue / 5) == 0,
+                     getDrawingHorizontalLine: (value) {
+                      return const FlLine(
+                        color: Colors.black12,
+                        strokeWidth: 1,
+                        dashArray: [3, 3],
+                      );
+                    },
+                  ),
+                  barGroups: [
+                    _makeBarGroupData(0, revenue, Colors.green.shade600),
+                    _makeBarGroupData(1, cost, Colors.orange.shade600),
+                    _makeBarGroupData(2, expense, Colors.red.shade600),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  BarChartGroupData _makeBarGroupData(int x, double y, Color color) {
+    return BarChartGroupData(
+      x: x,
+      barRods: [
+        BarChartRodData(
+          toY: y,
+          color: color,
+          width: 22,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(6),
+            topRight: Radius.circular(6),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTopDrinksChart(BuildContext context, List<MapEntry<String, int>> topDrinks) {
+    if (topDrinks.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final List<Color> chartColors = [
+      Colors.blue.shade400,
+      Colors.green.shade400,
+      Colors.purple.shade400,
+      Colors.amber.shade400,
+      Colors.red.shade400,
+    ];
+
+    final double totalDrinks = topDrinks.fold(0, (sum, item) => sum + item.value);
+    int touchedIndex = -1; // This should be a state variable for interaction
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Proporción de Bebidas Vendidas',
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          elevation: 4,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                SizedBox(
+                  height: 200,
+                  child: PieChart(
+                    PieChartData(
+                      pieTouchData: PieTouchData(
+                        touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                          // Interaction logic can be added here
+                        },
+                      ),
+                      borderData: FlBorderData(show: false),
+                      sectionsSpace: 2,
+                      centerSpaceRadius: 40,
+                      sections: List.generate(topDrinks.length, (i) {
+                        final isTouched = i == touchedIndex;
+                        final fontSize = isTouched ? 18.0 : 14.0;
+                        final radius = isTouched ? 60.0 : 50.0;
+                        final percentage = (topDrinks[i].value / totalDrinks) * 100;
+                        
+                        return PieChartSectionData(
+                          color: chartColors[i % chartColors.length],
+                          value: topDrinks[i].value.toDouble(),
+                          title: '${percentage.toStringAsFixed(1)}%',
+                          radius: radius,
+                          titleStyle: TextStyle(
+                            fontSize: fontSize,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            shadows: const [Shadow(color: Colors.black, blurRadius: 2)],
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                ...List.generate(topDrinks.length, (i) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 16, 
+                          height: 16,
+                          color: chartColors[i % chartColors.length],
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          topDrinks[i].key,
+                          style: Theme.of(context).textTheme.bodyLarge,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${topDrinks[i].value} un.',
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 

@@ -31,42 +31,34 @@ Esta sección documenta el estado del proyecto después de los cambios iniciales
     *   Se realizó el despliegue inicial de la aplicación en Firebase Hosting.
     *   Se inicializó el repositorio de Git y se guardó el estado del proyecto.
 
-## Plan de Cambios Actual: Programa de Lealtad
+## Característica Completada: Renovación de la Pantalla de Reportes
 
-Se implementará un sistema de lealtad para recompensar a los clientes recurrentes. El sistema se basa en la acumulación de puntos por compras.
+Se ha llevado a cabo una reestructuración completa de la pantalla de "Análisis de Rentabilidad" para convertirla en una herramienta de inteligencia de negocios potente y visualmente intuitiva.
 
-**Concepto:** Por cada **7 bebidas** que un cliente compre, la siguiente será **gratis**.
+### Mejoras Implementadas:
 
-### Fases de Implementación:
+1.  **Filtros de Fecha Dinámicos:**
+    *   Se implementaron filtros por rango de fechas (`_startDate`, `_endDate`).
+    *   Se añadieron **filtros rápidos** con botones para "Hoy", "Semana" y "Mes", mejorando drásticamente la usabilidad.
+    *   La interfaz de selección de fecha personalizada ahora solo aparece cuando es necesaria.
 
-#### **Fase 1: Modelo de Datos y Base de Datos**
-1.  **Nueva Colección en Firestore:** Crear una colección `clientes` para almacenar el nombre, teléfono (identificador único), puntos y fecha de registro de cada cliente.
-2.  **Modelo en Dart:** Crear un archivo `lib/models/customer.dart` con la clase `Customer` para manejar los datos de forma segura.
+2.  **Visualización de Datos Financieros:**
+    *   **Tarjetas de Resumen:** Se muestran métricas clave como "Ganancia Neta", "Ingresos", "Costos" y "Gastos" en tarjetas destacadas.
+    *   **Gráfico de Resumen Financiero:** Un gráfico de barras compara visualmente los ingresos, costos y gastos totales.
+    *   **Presupuesto vs. Gasto:** Se implementó una sección que compara el presupuesto asignado con el gasto real para categorías clave (`Rentas y servicios`, `Otros gastos`, etc.) utilizando barras de progreso.
 
-#### **Fase 2: Interfaz de Gestión de Clientes**
-1.  **Pantalla de Administración:** Desarrollar `lib/customer_management_screen.dart` para listar y buscar clientes.
-2.  **Formulario de Registro/Edición:** Crear un formulario para dar de alta y modificar la información de los clientes.
+3.  **Análisis de Ventas de Productos:**
+    *   Inicialmente se implementó un gráfico de barras con el "Top 5 de Bebidas más Vendidas".
+    *   Posteriormente, se reemplazó por un **gráfico de pastel** que muestra la proporción de ventas de cada bebida, ofreciendo una visión más clara de la distribución.
 
-#### **Fase 3: Integración con el Flujo de Venta**
-1.  **Asociar Cliente a Orden:** En `lib/drinks_menu_screen.dart`, añadir una función para seleccionar un cliente al iniciar una orden.
-2.  **Acumulación de Puntos:** En `lib/payment_screen.dart`, al finalizar un pago, incrementar los puntos del cliente asociado según la cantidad de bebidas compradas.
+4.  **Corrección de Dependencias y Despliegue Final:**
+    *   Se encontró y solucionó un **conflicto de versiones** con la librería `fl_chart`. El problema se resolvió forzando el uso de la versión `0.68.0`, que es estable y compatible con el código implementado.
+    *   Tras superar los errores de compilación, la aplicación fue compilada para la web (`flutter build web`) y desplegada con éxito en Firebase Hosting.
 
-#### **Fase 4: Canje de Recompensas**
-1.  **Notificación de Recompensa:** En `lib/drinks_menu_screen.dart`, mostrar un aviso visible si el cliente tiene 7 o más puntos.
-2.  **Lógica de Canje:** Implementar un botón "Canjear" que permita aplicar un descuento del 100% a una bebida y que reste 7 puntos del saldo del cliente al completar la venta.
+## Plan de Cambios Actual: Consolidación en Git
 
-## Desarrollo y Pruebas: Evitar Bloqueos de Firebase
+El trabajo en la pantalla de reportes ha concluido. El siguiente paso es guardar todos los cambios en el repositorio de Git para versionar el progreso y asegurar la integridad del código.
 
-Para evitar el bloqueo temporal de dispositivos por "actividad inusual" (`too-many-requests`) durante el desarrollo de la autenticación telefónica, es **mandatorio** usar los números de teléfono y códigos de prueba proporcionados por Firebase.
-
-**Estos números no envían SMS reales, no tienen costo y no están sujetos a los límites de frecuencia de envío.**
-
-### Credenciales de Prueba (Solo para Desarrollo):
-
-*   **Número de Teléfono de Prueba:** `+1 555-555-5555` (Este es un ejemplo, puedes usar cualquier número en este formato)
-*   **Código de Verificación de Prueba (para el número anterior):** `123456`
-
-**Instrucciones:**
-1.  En la interfaz de la aplicación, ingresa un número de teléfono de prueba como el de arriba.
-2.  La aplicación solicitará un código. Ingresa el código de 6 dígitos correspondiente.
-3.  El sistema simulará una autenticación exitosa sin enviar un SMS real y sin riesgo de bloqueo.
+**Pasos:**
+1.  Añadir todos los archivos modificados al "stage" de Git (`git add .`).
+2.  Crear un "commit" con un mensaje descriptivo que encapsule todas las mejoras realizadas.
