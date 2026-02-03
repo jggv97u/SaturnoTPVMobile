@@ -54,3 +54,19 @@ Se implementará un sistema de lealtad para recompensar a los clientes recurrent
 #### **Fase 4: Canje de Recompensas**
 1.  **Notificación de Recompensa:** En `lib/drinks_menu_screen.dart`, mostrar un aviso visible si el cliente tiene 7 o más puntos.
 2.  **Lógica de Canje:** Implementar un botón "Canjear" que permita aplicar un descuento del 100% a una bebida y que reste 7 puntos del saldo del cliente al completar la venta.
+
+## Desarrollo y Pruebas: Evitar Bloqueos de Firebase
+
+Para evitar el bloqueo temporal de dispositivos por "actividad inusual" (`too-many-requests`) durante el desarrollo de la autenticación telefónica, es **mandatorio** usar los números de teléfono y códigos de prueba proporcionados por Firebase.
+
+**Estos números no envían SMS reales, no tienen costo y no están sujetos a los límites de frecuencia de envío.**
+
+### Credenciales de Prueba (Solo para Desarrollo):
+
+*   **Número de Teléfono de Prueba:** `+1 555-555-5555` (Este es un ejemplo, puedes usar cualquier número en este formato)
+*   **Código de Verificación de Prueba (para el número anterior):** `123456`
+
+**Instrucciones:**
+1.  En la interfaz de la aplicación, ingresa un número de teléfono de prueba como el de arriba.
+2.  La aplicación solicitará un código. Ingresa el código de 6 dígitos correspondiente.
+3.  El sistema simulará una autenticación exitosa sin enviar un SMS real y sin riesgo de bloqueo.

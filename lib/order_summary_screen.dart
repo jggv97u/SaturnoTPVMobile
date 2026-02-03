@@ -44,7 +44,7 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
         'pagada': false,
         // Add customer data if available
         'cliente_id': widget.customer?.id,
-        'cliente_nombre': widget.customer?.nombre,
+        'cliente_nombre': widget.customer?.name, // Use the unified name field
       };
 
       await FirebaseFirestore.instance.collection('pedidos').add(orderData);
@@ -150,7 +150,7 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
                                 const Icon(Icons.person, size: 18, color: Colors.white70),
                                 const SizedBox(width: 8),
                                 Text(
-                                  widget.customer!.nombre,
+                                  widget.customer!.name, // Use the unified name field
                                   style: Theme.of(context).textTheme.titleMedium,
                                 ),
                               ],

@@ -1,8 +1,14 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:go_router/go_router.dart';
+
 import 'admin_panel_screen.dart';
+import 'customer_create_profile_screen.dart';
+import 'customer_login_screen.dart';
 import 'customer_management_screen.dart';
+import 'customer_profile_screen.dart';
 import 'expense_screen.dart';
 import 'firebase_options.dart';
 import 'login_screen.dart';
@@ -12,11 +18,68 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(const MyApp());
+
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  MyApp({super.key});
+
+  final GoRouter _router = GoRouter(
+    initialLocation: '/',
+    redirect: (BuildContext context, GoRouterState state) {
+      final bool loggedIn = FirebaseAuth.instance.currentUser != null;
+      final bool loggingIn = state.matchedLocation == '/login';
+      final bool isPublicRoute = [
+        '/customer-portal',
+        '/customer-profile',
+        '/create-profile'
+      ].contains(state.matchedLocation);
+
+      if (!loggedIn && !loggingIn && !isPublicRoute) {
+        return '/login';
+      }
+
+      if (loggedIn && loggingIn) {
+        return '/';
+      }
+
+      return null;
+    },
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (context, state) => const AdminPanelScreen(),
+      ),
+      GoRoute(
+        path: '/login',
+        builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/expenses',
+        builder: (context, state) => const ExpenseScreen(),
+      ),
+      GoRoute(
+        path: '/customers',
+        builder: (context, state) => const CustomerManagementScreen(),
+      ),
+      GoRoute(
+        path: '/customer-portal',
+        builder: (context, state) => const CustomerLoginScreen(),
+      ),
+      GoRoute(
+          path: '/customer-profile',
+          builder: (context, state) {
+            // This allows the screen to receive data after profile creation.
+            final Map<String, dynamic>? extra = state.extra as Map<String, dynamic>?;
+            return CustomerProfileScreen(initialData: extra);
+          }),
+      GoRoute(
+        path: '/create-profile',
+        builder: (context, state) => const CustomerCreateProfileScreen(),
+      ),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -30,9 +93,19 @@ class MyApp extends StatelessWidget {
           displayColor: Colors.white,
         );
 
-    return MaterialApp(
+    return MaterialApp.router(
+      routerConfig: _router,
       title: 'Saturno TPV',
       debugShowCheckedModeBanner: false,
+      locale: const Locale('es', 'MX'),
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('es', 'MX'),
+      ],
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
@@ -49,7 +122,8 @@ class MyApp extends StatelessWidget {
         appBarTheme: AppBarTheme(
           backgroundColor: const Color(0xFF1E1E1E),
           foregroundColor: Colors.white,
-          titleTextStyle: saturnoTextTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+          titleTextStyle:
+              saturnoTextTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
         cardTheme: CardThemeData(
           color: const Color(0xFF2C2C2C),
@@ -77,37 +151,6 @@ class MyApp extends StatelessWidget {
           contentTextStyle: saturnoTextTheme.bodyMedium,
         ),
       ),
-      home: const AuthGate(),
-      routes: {
-        '/expenses': (context) => const ExpenseScreen(),
-        '/customers': (context) => const CustomerManagementScreen(),
-      },
-    );
-  }
-}
-
-class AuthGate extends StatelessWidget {
-  const AuthGate({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (snapshot.hasData) {
-          // Si el usuario está autenticado, lo llevamos al Panel de Administración.
-          return const AdminPanelScreen();
-        }
-
-        // Si no, a la pantalla de Login.
-        return const LoginScreen();
-      },
     );
   }
 }

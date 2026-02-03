@@ -124,7 +124,7 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
         'items': updatedItems,
         'total_orden': newTotal,
         'cliente_id': _selectedCustomer?.id,
-        'cliente_nombre': _selectedCustomer?.nombre,
+        'cliente_nombre': _selectedCustomer?.name, // Use the unified name field
         'fecha_actualizacion': FieldValue.serverTimestamp(),
       });
 
@@ -183,7 +183,7 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: <Widget>[
-                    Text(_selectedCustomer?.nombre ?? 'Seleccionar un cliente'),
+                    Text(_selectedCustomer?.name ?? 'Seleccionar un cliente'), // Use the unified name field
                     const Icon(Icons.arrow_drop_down),
                   ],
                 ),
@@ -212,6 +212,7 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
                   ..sort((a, b) => a.key.compareTo(b.key));
 
                 return ListView(
+                  key: const PageStorageKey('drinksMenuListView'),
                   children: sortedEntries.map((entry) {
                     final sortedDrinks = entry.value..sort((a, b) {
                       final aName = (a.data() as Map<String, dynamic>)['nombre'] as String;
@@ -220,6 +221,7 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
                     });
 
                     return Column(
+                      key: ValueKey(entry.key),
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Padding(
@@ -237,6 +239,8 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
                           final quantity = _orderItems[drinkId] ?? 0;
 
                           return Card(
+                            // This ValueKey gives each Card a stable, unique identity.
+                            key: ValueKey(drinkId),
                             margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
                             child: Padding(
                               padding: const EdgeInsets.all(12.0),
@@ -339,11 +343,11 @@ class _CustomerSearchDialogState extends State<CustomerSearchDialog> {
             TextField(
               onChanged: (value) {
                 setState(() {
-                  _searchQuery = value;
+                  _searchQuery = value.toLowerCase();
                 });
               },
               decoration: const InputDecoration(
-                labelText: 'Buscar por nombre...',
+                labelText: 'Buscar por nombre o teléfono...',
                 prefixIcon: Icon(Icons.search),
                 border: OutlineInputBorder(),
               ),
@@ -355,23 +359,32 @@ class _CustomerSearchDialogState extends State<CustomerSearchDialog> {
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
-                  var filteredDocs = snapshot.data!.docs.where((doc) {
-                    final customerName = (doc.data() as Map<String, dynamic>)['nombre'].toString().toLowerCase();
-                    return customerName.contains(_searchQuery.toLowerCase());
+                  // First, convert all docs to our bilingual Customer model
+                  final allCustomers = snapshot.data!.docs.map((doc) => Customer.fromFirestore(doc)).toList();
+                  
+                  // Then, filter the unified list
+                  final filteredCustomers = allCustomers.where((customer) {
+                    final nameMatch = customer.name.toLowerCase().contains(_searchQuery);
+                    final phoneMatch = customer.phone.contains(_searchQuery);
+                    return nameMatch || phoneMatch;
                   }).toList();
 
-                  if (filteredDocs.isEmpty) {
+                  if (filteredCustomers.isEmpty) {
                     return const Center(child: Text('No se encontraron clientes.'));
                   }
 
+                  // Sort the results alphabetically
+                  filteredCustomers.sort((a,b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
                   return ListView.builder(
                     shrinkWrap: true,
-                    itemCount: filteredDocs.length,
+                    itemCount: filteredCustomers.length,
                     itemBuilder: (context, index) {
-                      final customer = Customer.fromFirestore(filteredDocs[index]);
+                      final customer = filteredCustomers[index];
                       return ListTile(
-                        title: Text(customer.nombre),
-                        subtitle: Text(customer.telefono),
+                        // Use the unified fields from the model
+                        title: Text(customer.name),
+                        subtitle: Text(customer.phone),
                         onTap: () {
                           Navigator.of(context).pop(customer);
                         },

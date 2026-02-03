@@ -1,6 +1,6 @@
-import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'edit_drink_screen.dart';
 
 class CatalogManagementScreen extends StatefulWidget {
   const CatalogManagementScreen({super.key});
@@ -12,156 +12,54 @@ class CatalogManagementScreen extends StatefulWidget {
 class _CatalogManagementScreenState extends State<CatalogManagementScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Función de parseo robusta para aceptar comas y puntos
-  double? _parseLenient(String value) {
-    try {
-      // Reemplaza comas por puntos para unificar el separador decimal
-      final normalizedValue = value.replaceAll(',', '.');
-      return double.parse(normalizedValue);
-    } catch (e) {
-      return null; // Retorna null si el parseo falla
-    }
-  }
-
-  Future<void> _showProductDialog({DocumentSnapshot? product}) async {
-    final formKey = GlobalKey<FormState>();
-    final nameController = TextEditingController();
-    final priceController = TextEditingController();
-    final costController = TextEditingController();
-    final categoryController = TextEditingController();
-
-    bool isEditing = product != null;
-    if (isEditing) {
-      final data = product.data() as Map<String, dynamic>;
-      nameController.text = data['nombre'] ?? '';
-      priceController.text = (data['precio'] ?? 0.0).toString();
-      costController.text = (data.containsKey('costo') ? data['costo'] : 0.0).toString();
-      categoryController.text = data['categoria'] ?? '';
-    } else {
-      priceController.text = '0.0';
-      costController.text = '0.0';
-    }
-
-    return showDialog(
+  Future<void> _deleteDrink(String docId, String drinkName) async {
+    final bool? confirmDelete = await showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(isEditing ? 'Editar Producto' : 'Añadir Producto'),
-          content: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: nameController,
-                    decoration: const InputDecoration(labelText: 'Nombre'),
-                    validator: (value) => value!.isEmpty ? 'Campo requerido' : null,
-                  ),
-                  TextFormField(
-                    controller: priceController,
-                    decoration: const InputDecoration(labelText: 'Precio'),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    validator: (value) => _parseLenient(value!) == null ? 'Número inválido' : null,
-                  ),
-                  TextFormField(
-                    controller: costController,
-                    decoration: const InputDecoration(labelText: 'Costo'),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    validator: (value) => _parseLenient(value!) == null ? 'Número inválido' : null,
-                  ),
-                  TextFormField(
-                    controller: categoryController,
-                    decoration: const InputDecoration(labelText: 'Categoría'),
-                    validator: (value) => value!.isEmpty ? 'Campo requerido' : null,
-                  ),
-                ],
-              ),
-            ),
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar Eliminación'),
+        content: Text('¿Estás seguro de que quieres eliminar "$drinkName" del catálogo? Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (formKey.currentState!.validate()) {
-                  try {
-                    final price = _parseLenient(priceController.text);
-                    final cost = _parseLenient(costController.text);
-
-                    if (price == null || cost == null) {
-                      // Esto no debería pasar gracias al validador, pero es una doble seguridad
-                      throw Exception('El formato del número no es válido a pesar de la validación.');
-                    }
-
-                    final data = {
-                      'nombre': nameController.text,
-                      'precio': price,
-                      'costo': cost,
-                      'categoria': categoryController.text,
-                    };
-
-                    if (isEditing) {
-                      await _firestore.collection('bebidas').doc(product.id).update(data);
-                    } else {
-                      await _firestore.collection('bebidas').add(data);
-                    }
-                    Navigator.of(context).pop();
-                  } catch (e, s) {
-                    // **SISTEMA DE DIAGNÓSTICO AVANZADO**
-                    // 1. Imprime el error real en la consola del desarrollador
-                    developer.log(
-                      'Error al guardar el producto.',
-                      name: 'CatalogManagement',
-                      error: e,
-                      stackTrace: s,
-                    );
-
-                    // 2. Muestra un mensaje honesto al usuario
-                    Navigator.of(context).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Error inesperado. Revisa la consola (F12) para detalles.'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                }
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        );
-      },
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
     );
+
+    if (confirmDelete == true) {
+      try {
+        await _firestore.collection('bebidas').doc(docId).delete();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('"$drinkName" fue eliminado.')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error al eliminar la bebida: $e')),
+          );
+        }
+      }
+    }
   }
 
-  Future<void> _deleteProduct(String productId) async {
-    // ... (código de eliminación sin cambios)
-    return showDialog(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('Confirmar Eliminación'),
-            content: const Text('¿Estás seguro de que quieres eliminar este producto?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                onPressed: () async {
-                  await _firestore.collection('bebidas').doc(productId).delete();
-                  Navigator.of(context).pop();
-                },
-                child: const Text('Eliminar'),
-              ),
-            ],
-          );
-        });
+  Future<void> _toggleInStock(String docId, bool currentStatus) async {
+    try {
+      await _firestore.collection('bebidas').doc(docId).update({'inStock': !currentStatus});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cambiar la disponibilidad: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -171,38 +69,83 @@ class _CatalogManagementScreenState extends State<CatalogManagementScreen> {
         title: const Text('Gestión de Catálogo'),
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: _firestore.collection('bebidas').orderBy('categoria').snapshots(),
+        stream: _firestore.collection('bebidas').orderBy('nombre').snapshots(),
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const Center(child: Text('Error al cargar el catálogo.'));
+          }
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('No hay productos en el catálogo.'));
+            return const Center(
+              child: Text(
+                'No hay bebidas en el catálogo.\n\nPresiona el botón + para añadir una.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16),
+              ),
+            );
           }
 
           return ListView.builder(
+            padding: const EdgeInsets.only(bottom: 80),
             itemCount: snapshot.data!.docs.length,
             itemBuilder: (context, index) {
-              final product = snapshot.data!.docs[index];
-              final data = product.data() as Map<String, dynamic>;
-              final cost = (data['costo'] ?? 0.0).toStringAsFixed(2);
-              final price = (data['precio'] ?? 0.0).toStringAsFixed(2);
+              final doc = snapshot.data!.docs[index];
+              final data = doc.data() as Map<String, dynamic>;
+              final nombre = data['nombre'] ?? 'Bebida sin nombre';
+              final categoria = data['categoria'] ?? 'Sin categoría';
+              final precio = (data['precio'] ?? 0.0).toDouble();
+              final inStock = data['inStock'] ?? true;
 
               return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: ListTile(
-                  title: Text(data['nombre'] ?? 'Sin nombre'),
-                  subtitle: Text('${data['categoria']} - Precio: \$$price - Costo: \$$cost'),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.blue),
-                        onPressed: () => _showProductDialog(product: product),
+                 margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                 elevation: inStock ? 2.0 : 0.5,
+                 child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  leading: Switch(
+                    value: inStock,
+                    onChanged: (value) => _toggleInStock(doc.id, inStock),
+                    activeColor: Colors.green,
+                  ),
+                  title: Text(
+                    nombre,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: inStock ? null : Colors.grey,
+                      decoration: inStock ? TextDecoration.none : TextDecoration.lineThrough,
+                    ),
+                  ),
+                  subtitle: Text(
+                    '$categoria | Precio: \$${precio.toStringAsFixed(2)}',
+                    style: TextStyle(color: inStock ? Colors.black54 : Colors.grey),
+                  ),
+                  trailing: PopupMenuButton<String>(
+                    onSelected: (value) {
+                      if (value == 'edit') {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => EditDrinkScreen(drinkDoc: doc),
+                          ),
+                        );
+                      } else if (value == 'delete') {
+                        _deleteDrink(doc.id, nombre);
+                      }
+                    },
+                    itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                      const PopupMenuItem<String>(
+                        value: 'edit',
+                        child: ListTile(
+                          leading: Icon(Icons.edit, color: Colors.amber),
+                          title: Text('Editar'),
+                        ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () => _deleteProduct(product.id),
+                      const PopupMenuItem<String>(
+                        value: 'delete',
+                        child: ListTile(
+                          leading: Icon(Icons.delete, color: Colors.redAccent),
+                          title: Text('Eliminar'),
+                        ),
                       ),
                     ],
                   ),
@@ -212,9 +155,14 @@ class _CatalogManagementScreenState extends State<CatalogManagementScreen> {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showProductDialog(),
-        tooltip: 'Añadir Producto',
+      floatingActionButton: FloatingActionButton.large(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const EditDrinkScreen()),
+          );
+        },
+        tooltip: 'Añadir Bebida',
         child: const Icon(Icons.add),
       ),
     );

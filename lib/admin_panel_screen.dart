@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'active_orders_screen.dart';
+import 'catalog_management_screen.dart';
 import 'customer_management_screen.dart';
 import 'expense_screen.dart';
-import 'sales_report_screen.dart'; // Import the sales report screen
+import 'sales_report_screen.dart';
 
 class AdminPanelScreen extends StatelessWidget {
   const AdminPanelScreen({super.key});
@@ -39,6 +40,17 @@ class AdminPanelScreen extends StatelessWidget {
               );
             },
           ),
+           _buildMenuCard(
+            context,
+            icon: Icons.inventory,
+            label: 'Gestionar Catálogo',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CatalogManagementScreen()),
+              );
+            },
+          ),
           _buildMenuCard(
             context,
             icon: Icons.people,
@@ -55,7 +67,6 @@ class AdminPanelScreen extends StatelessWidget {
             icon: Icons.bar_chart,
             label: 'Reportes',
             onTap: () {
-              // Navigate to the SalesReportScreen
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const SalesReportScreen()),

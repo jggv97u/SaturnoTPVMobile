@@ -1,60 +1,64 @@
+const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const admin = require("firebase-admin");
 const functions = require("firebase-functions");
-const { MercadoPagoConfig, Preference } = require("mercadopago");
 
-const client = new MercadoPagoConfig({
-  accessToken: "TEST-4829399239846938-071317-a9a30b501c10d3a58e124c653d662b21-1892336336",
-});
+admin.initializeApp();
 
-exports.createPaymentPreference = functions.https.onCall(async (data, context) => {
-  const amount = data.amount;
-  const title = data.title;
-  const email = data.email;
+exports.updateCustomerStatsOnSale = onDocumentCreated("ventas/{ventaId}", async (event) => {
+    const snap = event.data;
+    if (!snap) {
+        console.log("No data associated with the event");
+        return;
+    }
+    const saleData = snap.data();
 
-  if (!amount || !title || !email) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'La función debe ser llamada con los argumentos "amount", "title" y "email".'
-    );
-  }
+    if (!saleData.clienteId) {
+        return;
+    }
 
-  const preferenceBody = {
-    items: [
-      {
-        title: title,
-        quantity: 1,
-        currency_id: "MXN",
-        unit_price: amount,
-      },
-    ],
-    payer: {
-      email: email,
-    },
-    // Agregamos URLs para que Mercado Pago sepa a dónde volver
-    back_urls: {
-        success: "https://console.firebase.google.com/project/saturnotrcventasdb/overview", // URL placeholder de éxito
-        failure: "https://console.firebase.google.com/project/saturnotrcventasdb/overview", // URL placeholder de fallo
-        pending: "https://console.firebase.google.com/project/saturnotrcventasdb/overview", // URL placeholder de pendiente
-    },
-    auto_return: "approved",
-  };
+    const clienteId = saleData.clienteId;
+    const customerRef = admin.firestore().collection("clientes").doc(clienteId);
 
-  try {
-    console.log("Creando preferencia con los datos:", JSON.stringify(preferenceBody));
-    
-    const preference = new Preference(client);
-    const result = await preference.create({ body: preferenceBody });
+    try {
+        const customerDoc = await customerRef.get();
+        if (!customerDoc.exists) {
+            console.log(`Cliente con ID ${clienteId} no encontrado.`);
+            return;
+        }
 
-    const preferenceId = result.id;
-    const checkoutUrl = result.init_point; // <-- La URL de pago que necesitamos
+        const customerData = customerDoc.data();
+        const saleTimestamp = saleData.timestamp.toDate();
 
-    console.log(`Preferencia creada con ID: ${preferenceId}`);
-    console.log(`URL de Checkout: ${checkoutUrl}`);
+        const updateData = {
+            lastVisit: saleTimestamp,
+            lastDrink: saleData.productoNombre,
+        };
 
-    // Devolvemos ambos valores al cliente
-    return { preferenceId, checkoutUrl };
+        if (!customerData.firstVisit) {
+            updateData.firstVisit = saleTimestamp;
+        }
 
-  } catch (error) {
-    console.error("Error al crear la preferencia de Mercado Pago:", error);
-    throw new functions.https.HttpsError('internal', 'No se pudo crear la preferencia de Mercado Pago.', error.message);
-  }
+        const salesSnapshot = await admin.firestore().collection("ventas")
+            .where("clienteId", "==", clienteId)
+            .get();
+        
+        const drinkCounts = {};
+        salesSnapshot.forEach(doc => {
+            const drink = doc.data().productoNombre;
+            drinkCounts[drink] = (drinkCounts[drink] || 0) + 1;
+        });
+
+        if (Object.keys(drinkCounts).length > 0) {
+            const favoriteDrink = Object.keys(drinkCounts).reduce((a, b) => 
+                drinkCounts[a] > drinkCounts[b] ? a : b
+            );
+            updateData.favoriteDrink = favoriteDrink;
+        }
+
+        await customerRef.update(updateData);
+        console.log(`Estadísticas actualizadas para el cliente ${clienteId}`);
+
+    } catch (error) {
+        console.error("Error al actualizar estadísticas del cliente:", error);
+    }
 });

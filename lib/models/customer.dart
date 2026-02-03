@@ -1,40 +1,48 @@
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Customer {
   final String id;
-  final String nombre;
-  final String telefono;
-  final int puntos;
-  final DateTime fechaRegistro;
+  final String name;
+  final String phone;
+  final int points;
+  final DateTime createdAt;
 
   Customer({
     required this.id,
-    required this.nombre,
-    required this.telefono,
-    required this.puntos,
-    required this.fechaRegistro,
+    required this.name,
+    required this.phone,
+    required this.points,
+    required this.createdAt,
   });
 
-  // Factory constructor para crear un Customer desde un DocumentSnapshot de Firestore
+  /// A "bilingual" factory constructor that can create a Customer instance
+  /// from either the old or the new data structure in Firestore.
   factory Customer.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+
+    // Handle "bilingual" fields with grace.
+    // Prefers the new field name ('name', 'phone') but falls back to the old one ('nombre', 'telefono').
+    final String name = data['name'] ?? data['nombre'] ?? 'Nombre no disponible';
+    
+    // For the phone number, the new structure saves it with '+52' but the old one doesn't.
+    // We normalize it by ensuring it always has the prefix for consistency.
+    String phone = data['phone'] ?? data['telefono'] ?? 'Teléfono no disponible';
+    if (!phone.startsWith('+') && phone.length == 10) {
+      phone = '+52$phone';
+    }
+
+    // Points and createdAt are consistent, but we provide defaults.
+    final int points = (data['points'] ?? data['puntos'] ?? 0) as int;
+    final Timestamp? timestamp = data['createdAt'] as Timestamp?;
+    final DateTime createdAt = timestamp?.toDate() ?? DateTime.now();
+
     return Customer(
       id: doc.id,
-      nombre: data['nombre'] ?? '',
-      telefono: data['telefono'] ?? '',
-      puntos: data['puntos'] ?? 0,
-      // El Timestamp de Firestore se convierte a DateTime de Dart
-      fechaRegistro: (data['fecha_registro'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      name: name,
+      phone: phone,
+      points: points,
+      createdAt: createdAt,
     );
-  }
-
-  // Método para convertir un Customer a un mapa para guardarlo en Firestore
-  Map<String, dynamic> toFirestore() {
-    return {
-      'nombre': nombre,
-      'telefono': telefono,
-      'puntos': puntos,
-      'fecha_registro': Timestamp.fromDate(fechaRegistro),
-    };
   }
 }
