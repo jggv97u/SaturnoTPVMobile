@@ -1,9 +1,11 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 
+import 'active_orders_screen.dart';
 import 'admin_panel_screen.dart';
 import 'customer_create_profile_screen.dart';
 import 'customer_login_screen.dart';
@@ -27,29 +29,58 @@ class MyApp extends StatelessWidget {
 
   final GoRouter _router = GoRouter(
     initialLocation: '/',
-    redirect: (BuildContext context, GoRouterState state) {
-      final bool loggedIn = FirebaseAuth.instance.currentUser != null;
-      final bool loggingIn = state.matchedLocation == '/login';
-      final bool isPublicRoute = [
+    redirect: (BuildContext context, GoRouterState state) async {
+      final loggedIn = FirebaseAuth.instance.currentUser != null;
+      final isLoggingIn = state.matchedLocation == '/login';
+      final isPublicCustomerRoute = [
         '/customer-portal',
         '/customer-profile',
         '/create-profile'
       ].contains(state.matchedLocation);
 
-      if (!loggedIn && !loggingIn && !isPublicRoute) {
-        return '/login';
+      // Si el usuario no ha iniciado sesión, redirigir a /login a menos que ya esté allí
+      // o en una ruta pública de cliente.
+      if (!loggedIn) {
+        return isLoggingIn || isPublicCustomerRoute ? null : '/login';
       }
 
-      if (loggedIn && loggingIn) {
-        return '/';
+      // El usuario ha iniciado sesión. Comprobar su rol.
+      final userDoc = await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(FirebaseAuth.instance.currentUser!.uid)
+          .get();
+          
+      final isAdmin = userDoc.exists && (userDoc.data()?['isAdmin'] ?? false);
+
+      final isGoingToRoot = state.matchedLocation == '/';
+      final isGoingToAdmin = state.matchedLocation == '/admin';
+
+      // Si el usuario está autenticado y va a /login o a /, redirigir según su rol.
+      if (isLoggingIn || isGoingToRoot) {
+        return isAdmin ? '/admin' : '/pos';
       }
 
+      // Si un no-admin intenta acceder a /admin, redirigirlo a /pos.
+      if (!isAdmin && isGoingToAdmin) {
+        return '/pos';
+      }
+
+      // En cualquier otro caso, no se necesita redirección.
       return null;
     },
     routes: [
       GoRoute(
         path: '/',
+        builder: (context, state) =>
+            const Scaffold(body: Center(child: CircularProgressIndicator())),
+      ),
+      GoRoute(
+        path: '/admin',
         builder: (context, state) => const AdminPanelScreen(),
+      ),
+       GoRoute(
+        path: '/pos',
+        builder: (context, state) => const ActiveOrdersScreen(),
       ),
       GoRoute(
         path: '/login',
@@ -70,8 +101,8 @@ class MyApp extends StatelessWidget {
       GoRoute(
           path: '/customer-profile',
           builder: (context, state) {
-            // This allows the screen to receive data after profile creation.
-            final Map<String, dynamic>? extra = state.extra as Map<String, dynamic>?;
+            final Map<String, dynamic>? extra =
+                state.extra as Map<String, dynamic>?;
             return CustomerProfileScreen(initialData: extra);
           }),
       GoRoute(
