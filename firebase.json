@@ -39,5 +39,13 @@
   "functions": {
     "source": "functions",
     "runtime": "nodejs20"
+  },
+  "auth": {
+    "providers": {
+      "googleSignIn": {
+        "supportEmail": "soporte@example.com",
+        "oAuthBrandDisplayName": "saturnotrcventasdb"
+      }
+    }
   }
 }

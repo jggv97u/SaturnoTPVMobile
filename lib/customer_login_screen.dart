@@ -15,18 +15,20 @@ class CustomerLoginScreen extends StatefulWidget {
 }
 
 class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
+  // Controllers and Firebase instances
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _otpController = TextEditingController();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  // State variables
   bool _isSendingCode = false;
   bool _isVerifyingCode = false;
   bool _codeSent = false;
-
   ConfirmationResult? _confirmationResult;
-  String? _verificationId; // For mobile
+  String? _verificationId;
 
+  // Resend code timer
   Timer? _resendTimer;
   int _resendCooldown = 60;
   bool _canResendCode = false;
@@ -45,6 +47,8 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
     super.dispose();
   }
 
+  // --- Phone Auth Methods ---
+
   void _startResendTimer() {
     _resendTimer?.cancel();
     setState(() {
@@ -52,11 +56,15 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
       _resendCooldown = 60;
     });
     _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       if (_resendCooldown > 0) {
-        if (mounted) setState(() => _resendCooldown--);
+        setState(() => _resendCooldown--);
       } else {
         timer.cancel();
-        if (mounted) setState(() => _canResendCode = true);
+        setState(() => _canResendCode = true);
       }
     });
   }
@@ -64,10 +72,7 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
   Future<void> _sendOtp() async {
     final String phoneNumber = '+52${_phoneController.text.trim()}';
     if (_phoneController.text.trim().length != 10) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, ingresa un número de 10 dígitos.')),
-      );
+      _showErrorSnackBar('Por favor, ingresa un número de 10 dígitos.');
       return;
     }
 
@@ -77,28 +82,22 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
       if (kIsWeb) {
         _confirmationResult = await _auth.signInWithPhoneNumber(phoneNumber);
         developer.log('Web: ConfirmationResult received.', name: 'CustomerLogin');
-        if (mounted) {
-          setState(() => _codeSent = true);
-          _startResendTimer();
-        }
       } else {
         await _auth.verifyPhoneNumber(
           phoneNumber: phoneNumber,
           verificationCompleted: _handleVerificationCompleted,
           verificationFailed: _handleVerificationFailed,
           codeSent: (String verificationId, int? resendToken) {
-            if (mounted) {
-              setState(() {
-                _verificationId = verificationId;
-                _codeSent = true;
-              });
-              _startResendTimer();
-            }
+            if (mounted) _verificationId = verificationId;
           },
           codeAutoRetrievalTimeout: (String verificationId) {
             if (mounted) _verificationId = verificationId;
           },
         );
+      }
+      if (mounted) {
+        setState(() => _codeSent = true);
+        _startResendTimer();
       }
     } catch (e) {
       _handleError(e, 'Error al enviar el código de verificación');
@@ -134,54 +133,76 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
     }
   }
 
-  /// Checks if a customer profile exists and redirects accordingly.
+  // --- Corrected Auth Logic ---
+
   Future<void> _checkAndRedirect(User? user) async {
-    if (!mounted || user == null || user.phoneNumber == null) return;
+    if (!mounted || user == null) return;
 
-    // Hybrid search: Check for old and new user structures
-    final phoneNumber = user.phoneNumber!;
-    final oldUserQuery = await _firestore
-        .collection('clientes')
-        .where('telefono', isEqualTo: phoneNumber.substring(3))
-        .limit(1)
-        .get();
-
-    if (oldUserQuery.docs.isNotEmpty) {
-      // Found existing user with old structure
-      context.go('/customer-profile');
+    final phoneNumber = user.phoneNumber;
+    if (phoneNumber == null) {
+      // Fallback for safety, though unlikely with phone auth
+      context.go('/create-profile');
       return;
     }
 
-    final newUserDoc = await _firestore.collection('clientes').doc(phoneNumber).get();
-    if (newUserDoc.exists) {
-      // Found existing user with new structure
+    bool profileExists = await _doesProfileExist(phoneNumber);
+
+    if (profileExists) {
       context.go('/customer-profile');
     } else {
-      // No profile found, go to creation screen
       context.go('/create-profile');
     }
   }
 
+  /// Hybrid check to see if a customer profile exists.
+  Future<bool> _doesProfileExist(String phoneNumber) async {
+    // Strategy 1: Find OLD users by querying the 'telefono' field
+    final oldUserQuery = await _firestore
+        .collection('clientes')
+        .where('telefono', isEqualTo: phoneNumber.substring(3)) // Remove +52
+        .limit(1)
+        .get();
+
+    if (oldUserQuery.docs.isNotEmpty) {
+      return true; // Found existing user
+    }
+
+    // Strategy 2: Find NEW users by Document ID (full phone number)
+    final newUserDoc = await _firestore.collection('clientes').doc(phoneNumber).get();
+
+    return newUserDoc.exists; // Return true if this doc exists
+  }
+
+
   void _handleVerificationCompleted(PhoneAuthCredential credential) async {
+    setState(() => _isVerifyingCode = true);
     try {
       final userCredential = await _auth.signInWithCredential(credential);
       await _checkAndRedirect(userCredential.user);
     } catch(e) {
       _handleError(e, 'Error durante el inicio de sesión automático');
+    } finally {
+       if (mounted) setState(() => _isVerifyingCode = false);
     }
   }
 
   void _handleVerificationFailed(FirebaseAuthException e) {
-    _handleError(e, 'La verificación del número de teléfono falló');
+    _handleError(e, 'La verificación del número de teléfono falló: ${e.code}');
+  }
+  
+  void _showErrorSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
+    );
   }
 
   void _handleError(Object? e, String message) {
     developer.log(message, name: 'CustomerLogin', error: e, level: 1000);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    _showErrorSnackBar(message);
   }
+
+  // --- UI Build Methods ---
 
   @override
   Widget build(BuildContext context) {
@@ -218,7 +239,7 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
         const Text('Bienvenido a Saturno', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
         const SizedBox(height: 16),
         const Text(
-          'Ingresa tu número de teléfono para acceder a tu perfil y ver tus puntos de lealtad.',
+          'Ingresa tu número para acceder a tu perfil.',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 16, color: Colors.white70),
         ),
@@ -267,7 +288,7 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
           defaultPinTheme: defaultPinTheme,
           focusedPinTheme: defaultPinTheme.copyWith(
             decoration: defaultPinTheme.decoration!.copyWith(
-              border: Border.all(color: const Color(0xFFFFD70f),), // Corrected color code
+              border: Border.all(color: const Color(0xFFFFD700)),
             ),
           ),
           onCompleted: (pin) => _verifyOtp(),

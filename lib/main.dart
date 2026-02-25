@@ -38,13 +38,10 @@ class MyApp extends StatelessWidget {
         '/create-profile'
       ].contains(state.matchedLocation);
 
-      // Si el usuario no ha iniciado sesión, redirigir a /login a menos que ya esté allí
-      // o en una ruta pública de cliente.
       if (!loggedIn) {
         return isLoggingIn || isPublicCustomerRoute ? null : '/login';
       }
 
-      // El usuario ha iniciado sesión. Comprobar su rol.
       final userDoc = await FirebaseFirestore.instance
           .collection('usuarios')
           .doc(FirebaseAuth.instance.currentUser!.uid)
@@ -55,17 +52,14 @@ class MyApp extends StatelessWidget {
       final isGoingToRoot = state.matchedLocation == '/';
       final isGoingToAdmin = state.matchedLocation == '/admin';
 
-      // Si el usuario está autenticado y va a /login o a /, redirigir según su rol.
       if (isLoggingIn || isGoingToRoot) {
         return isAdmin ? '/admin' : '/pos';
       }
 
-      // Si un no-admin intenta acceder a /admin, redirigirlo a /pos.
       if (!isAdmin && isGoingToAdmin) {
         return '/pos';
       }
 
-      // En cualquier otro caso, no se necesita redirección.
       return null;
     },
     routes: [
@@ -100,11 +94,8 @@ class MyApp extends StatelessWidget {
       ),
       GoRoute(
           path: '/customer-profile',
-          builder: (context, state) {
-            final Map<String, dynamic>? extra =
-                state.extra as Map<String, dynamic>?;
-            return CustomerProfileScreen(initialData: extra);
-          }),
+          builder: (context, state) => const CustomerProfileScreen(),
+      ),
       GoRoute(
         path: '/create-profile',
         builder: (context, state) => const CustomerCreateProfileScreen(),

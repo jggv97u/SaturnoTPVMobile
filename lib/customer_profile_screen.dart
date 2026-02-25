@@ -2,13 +2,49 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'dart:math';
+
+class LoyaltyLevel {
+  final String name;
+  final Widget icon;
+
+  const LoyaltyLevel({required this.name, required this.icon});
+
+  factory LoyaltyLevel.fromVisits(int visits) {
+    if (visits >= 50) {
+      return const LoyaltyLevel(
+        name: 'Comandante Galáctico',
+        icon: Text('🏆', style: TextStyle(fontSize: 20)),
+      );
+    } else if (visits >= 15) {
+      return const LoyaltyLevel(
+        name: 'Navegante Estelar',
+        icon: Text('🛰️', style: TextStyle(fontSize: 20)),
+      );
+    } else {
+      return const LoyaltyLevel(
+        name: 'Explorador Cósmico',
+        icon: Text('🚀', style: TextStyle(fontSize: 20)),
+      );
+    }
+  }
+}
+
+class Achievement {
+  final String name;
+  final String icon;
+  final bool isUnlocked;
+
+  const Achievement({
+    required this.name,
+    required this.icon,
+    this.isUnlocked = false,
+  });
+}
 
 class CustomerProfileScreen extends StatefulWidget {
-  // This allows receiving data from the creation screen in the future,
-  // but we will ignore it for now to focus on existing users.
-  final Map<String, dynamic>? initialData;
-
-  const CustomerProfileScreen({super.key, this.initialData});
+  const CustomerProfileScreen({super.key});
 
   @override
   State<CustomerProfileScreen> createState() => _CustomerProfileScreenState();
@@ -18,62 +54,128 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  Future<DocumentSnapshot?>? _customerFuture;
+  Stream<DocumentSnapshot>? _customerStream;
+  Stream<QuerySnapshot>? _couponsStream;
+  DocumentReference? _customerDocRef;
 
   @override
   void initState() {
     super.initState();
-    // Only fetch data if there's an authenticated user
     final user = _auth.currentUser;
     if (user != null) {
-      _customerFuture = _fetchCustomerProfile(user);
+      _initializeCustomerData(user);
     }
   }
 
-  /// Hybrid fetch strategy to find a customer profile.
-  Future<DocumentSnapshot?> _fetchCustomerProfile(User user) async {
+  void _initializeCustomerData(User user) async {
+    _customerDocRef = await _getCustomerDocRef(user);
+    if (_customerDocRef != null) {
+      setState(() {
+        _customerStream = _customerDocRef!.snapshots();
+        _couponsStream = _firestore
+            .collection('cupones_bebidas_gratis')
+            .where('clienteId', isEqualTo: _customerDocRef!.id)
+            .where('estado', isEqualTo: 'valido')
+            .where('fechaExpiracion', isGreaterThan: Timestamp.now())
+            .snapshots();
+      });
+       _customerStream!.listen(_handleCustomerDataChanges);
+    }
+  }
+
+  Future<DocumentReference?> _getCustomerDocRef(User user) async {
     final phoneNumber = user.phoneNumber;
     if (phoneNumber == null) return null;
 
-    // --- STRATEGY 1: Find OLD users by querying the 'telefono' field ---
-    // This is the priority now, as per your request.
     final oldUserQuery = await _firestore
         .collection('clientes')
-        .where('telefono', isEqualTo: phoneNumber.substring(3)) // Remove +52
+        .where('telefono', isEqualTo: phoneNumber.substring(3))
         .limit(1)
         .get();
 
     if (oldUserQuery.docs.isNotEmpty) {
-      // Found an existing user with the old data structure
-      return oldUserQuery.docs.first;
+      return oldUserQuery.docs.first.reference;
     }
 
-    // --- STRATEGY 2: Find NEW users by Document ID ---
-    // If no old user was found, check if it's a new user whose ID is their phone number.
-    final newUserDoc = await _firestore.collection('clientes').doc(phoneNumber).get();
-
-    if (newUserDoc.exists) {
-      // Found a user with the new data structure
-      return newUserDoc;
-    }
-    
-    // If neither strategy found a document, return null
-    return null;
+    final newUserDoc = _firestore.collection('clientes').doc(phoneNumber);
+    final docSnapshot = await newUserDoc.get();
+    return docSnapshot.exists ? newUserDoc : null;
   }
+
+  void _handleCustomerDataChanges(DocumentSnapshot snapshot) {
+    if (!snapshot.exists) return;
+    _handlePointsToCouponConversion(snapshot);
+    _handleGalacticCommanderReward(snapshot);
+  }
+
+ void _handlePointsToCouponConversion(DocumentSnapshot snapshot) {
+    final data = snapshot.data() as Map<String, dynamic>;
+    final points = (data['points'] ?? data['puntos'] ?? 0) as int;
+    const pointsPerCoupon = 7;
+
+    if (points >= pointsPerCoupon) {
+      final couponsToGenerate = points ~/ pointsPerCoupon;
+      final remainingPoints = points % pointsPerCoupon;
+
+      for (int i = 0; i < couponsToGenerate; i++) {
+        _generateFreeDrinkCoupon(snapshot.reference, 'Canje de Puntos');
+      }
+
+      snapshot.reference.update({'points': remainingPoints, 'puntos': remainingPoints});
+    }
+  }
+
+  void _handleGalacticCommanderReward(DocumentSnapshot snapshot) {
+    final data = snapshot.data() as Map<String, dynamic>;
+    final visits = (data['visits'] ?? 0) as int;
+    final hasClaimedReward = (data['claimedCommanderReward'] ?? false) as bool;
+
+    if (visits >= 50 && !hasClaimedReward) {
+      _generateFreeDrinkCoupon(snapshot.reference, 'Recompensa Comandante');
+      snapshot.reference.update({'claimedCommanderReward': true});
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('¡Felicidades, Comandante! Has ganado una bebida gratis.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _generateFreeDrinkCoupon(DocumentReference customerRef, String origin) async {
+    final newCouponRef = _firestore.collection('cupones_bebidas_gratis').doc();
+    final expirationDate = DateTime.now().add(const Duration(days: 7));
+
+    await newCouponRef.set({
+      'clienteId': customerRef.id,
+      'codigo': 'SAT-${newCouponRef.id.substring(0, 8).toUpperCase()}',
+      'fechaCreacion': FieldValue.serverTimestamp(),
+      'fechaExpiracion': Timestamp.fromDate(expirationDate),
+      'estado': 'valido',
+      'origen': origin,
+    });
+  }
+
 
   Future<void> _logout() async {
     await _auth.signOut();
-    if (mounted) {
-      // Go back to the customer login portal after signing out.
-      context.go('/customer-portal');
-    }
+    if (mounted) context.go('/customer-portal');
   }
 
   @override
   Widget build(BuildContext context) {
-    // If there's no logged-in user, show an error.
-    if (_customerFuture == null) {
-      return _buildErrorScaffold('Error: No se pudo verificar tu sesión.');
+    if (_customerStream == null) {
+       return Scaffold(
+        backgroundColor: const Color(0xFF121212),
+        body: Center(
+          child: _auth.currentUser != null
+              ? const CircularProgressIndicator(color: Color(0xFFFFD700)) 
+              : _buildErrorScaffold('Error: Sesión no válida.'),
+        ),
+      );
     }
 
     return Scaffold(
@@ -81,36 +183,24 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
       appBar: AppBar(
         title: const Text('Tu Perfil Saturno'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Cerrar Sesión',
-            onPressed: _logout,
-          ),
+          IconButton(icon: const Icon(Icons.logout), tooltip: 'Cerrar Sesión', onPressed: _logout),
         ],
       ),
-      body: FutureBuilder<DocumentSnapshot?>(
-        future: _customerFuture,
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: _customerStream,
         builder: (context, snapshot) {
-          // While waiting for data, show a loading indicator
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator(color: Color(0xFFFFD700)));
           }
-
-          // If there was an error or no document was found, show the error view
-          if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
+          if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
             return _buildNotFoundView();
           }
-
           final customerData = snapshot.data!.data() as Map<String, dynamic>;
-
-          // If data is found, build the profile view
           return _buildProfileView(customerData);
         },
       ),
     );
   }
-
-  // --- UI Building Methods ---
 
   Widget _buildProfileView(Map<String, dynamic> customerData) {
     return ListView(
@@ -118,12 +208,76 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
       children: [
         _buildWelcomeCard(customerData),
         const SizedBox(height: 20),
-        _buildLoyaltyCard(customerData),
+        _buildPointsCard(customerData),
+        const SizedBox(height: 20),
+        _buildCouponsSection(),
+        const SizedBox(height: 20),
+        _buildAchievementsCard(customerData),
         const SizedBox(height: 20),
         _buildStatsCard(customerData),
       ],
     );
   }
+
+   Widget _buildCouponsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Mis Cupones de Bebida Gratis', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 10),
+        StreamBuilder<QuerySnapshot>(
+          stream: _couponsStream,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+              return const Text('No tienes cupones de bebidas gratis... ¡aún!', style: TextStyle(color: Colors.white70));
+            }
+
+            return ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: snapshot.data!.docs.length,
+              itemBuilder: (context, index) {
+                var coupon = snapshot.data!.docs[index];
+                return _buildCouponCard(coupon.data() as Map<String, dynamic>);
+              },
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCouponCard(Map<String, dynamic> couponData) {
+    final code = couponData['codigo'] ?? 'N/A';
+    final expiration = (couponData['fechaExpiracion'] as Timestamp).toDate();
+    final formattedExpiration = DateFormat('dd/MM/yyyy, hh:mm a').format(expiration);
+
+    return Card(
+      color: const Color(0xFF2E2E2E),
+      margin: const EdgeInsets.only(bottom: 15),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            const Text('¡BEBIDA GRATIS!', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFFFD700))),
+            const SizedBox(height: 15),
+            const Icon(Icons.coffee, size: 50, color: Color(0xFFFFD700)),
+            const SizedBox(height: 15),
+            Text('Usa este código en caja:', style: TextStyle(fontSize: 16, color: Colors.white70)),
+            const SizedBox(height: 5),
+            Text(code, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 2)),
+            const SizedBox(height: 15),
+            Text('Válido hasta: $formattedExpiration', style: const TextStyle(fontSize: 14, color: Colors.amber)),
+          ],
+        ),
+      )
+    );
+  }
+
+
 
   Scaffold _buildErrorScaffold(String message) {
     return Scaffold(
@@ -154,7 +308,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             ),
             const SizedBox(height: 10),
             const Text(
-              'Parece que no estás registrado. Si crees que es un error, por favor, contacta a soporte.',
+              'Parece que no estás registrado. Si crees que es un error, contacta a soporte.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white70),
             ),
@@ -166,20 +320,42 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     );
   }
 
-  // --- "Bilingual" Data Getters ---
-
   String _getName(Map<String, dynamic> data) => data['name'] ?? data['nombre'] ?? 'Cliente';
   int _getPoints(Map<String, dynamic> data) => (data['points'] ?? data['puntos'] ?? 0) as int;
+  int _getVisits(Map<String, dynamic> data) => (data['visits'] ?? 0) as int;
+
+  LoyaltyLevel _getLoyaltyLevel(Map<String, dynamic> data) {
+    final visits = _getVisits(data);
+    return LoyaltyLevel.fromVisits(visits);
+  }
+
+  List<Achievement> _getAchievements(Map<String, dynamic> data) {
+    final Set<String> unlocked = Set<String>.from(data['achievements'] ?? []);
+    return [
+      Achievement(name: 'Explorador de Sabores', icon: '🌍', isUnlocked: unlocked.contains('flavor_explorer')),
+      Achievement(name: 'Frecuencia Estelar', icon: '⭐', isUnlocked: unlocked.contains('star_frequency')),
+      Achievement(name: 'Madrugador', icon: '☀️', isUnlocked: unlocked.contains('early_bird')),
+    ];
+  }
 
   Widget _buildWelcomeCard(Map<String, dynamic> data) {
     final name = _getName(data);
+    final level = _getLoyaltyLevel(data);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('¡Hola, $name!', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Flexible(
+                  child: Text('¡Hola, $name!', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                ),
+                Chip(avatar: level.icon, label: Text(level.name), backgroundColor: Colors.blueGrey[700], labelStyle: const TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
             const SizedBox(height: 10),
             const Text('Qué bueno verte de nuevo.', style: TextStyle(color: Colors.white70)),
           ],
@@ -188,18 +364,17 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     );
   }
 
-  Widget _buildLoyaltyCard(Map<String, dynamic> data) {
+ Widget _buildPointsCard(Map<String, dynamic> data) {
     final points = _getPoints(data);
     const pointsNeeded = 7;
-    final progress = (points % pointsNeeded) / pointsNeeded;
-    final drinksEarned = points ~/ pointsNeeded;
+    final progress = points / pointsNeeded;
 
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            const Text('Progreso de Lealtad', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const Text('Progreso para Próxima Bebida', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 15),
             Stack(
               alignment: Alignment.center,
@@ -214,14 +389,12 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                     valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFFD700)),
                   ),
                 ),
-                Text('${points % pointsNeeded} / $pointsNeeded', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                Text('$points / $pointsNeeded', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 15),
             Text(
-              drinksEarned > 0
-                  ? '¡Felicidades! Tienes $drinksEarned bebida(s) gratis para redimir.'
-                  : 'Te faltan ${pointsNeeded - (points % pointsNeeded)} para tu próxima bebida gratis.',
+              'Acumula 7 puntos para ganar una bebida gratis.',
               style: const TextStyle(fontSize: 16),
               textAlign: TextAlign.center,
             )
@@ -231,10 +404,40 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     );
   }
 
+  Widget _buildAchievementsCard(Map<String, dynamic> data) {
+    final achievements = _getAchievements(data);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Logros Cósmicos', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 15),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: achievements.map((ach) {
+                return Column(
+                  children: [
+                    Opacity(
+                      opacity: ach.isUnlocked ? 1.0 : 0.4,
+                      child: Text(ach.icon, style: const TextStyle(fontSize: 40)),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(ach.name, style: TextStyle(fontSize: 12, color: ach.isUnlocked ? Colors.white : Colors.grey[600]), textAlign: TextAlign.center),
+                  ],
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildStatsCard(Map<String, dynamic> data) {
     final favoriteDrink = data['favoriteDrink'] ?? 'Aún no registrada';
     final lastDrink = data['lastDrink'] ?? 'Ninguna';
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
