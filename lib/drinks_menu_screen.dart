@@ -1,6 +1,6 @@
-import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:collection/collection.dart';
 import 'models/customer.dart';
 import 'order_summary_screen.dart';
 
@@ -16,6 +16,7 @@ class DrinksMenuScreen extends StatefulWidget {
 class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
   final Map<String, int> _orderItems = {};
   final _orderNameController = TextEditingController();
+  final ValueNotifier<String> _selectedCategory = ValueNotifier('Todas');
   bool _isSaving = false;
   Customer? _selectedCustomer;
 
@@ -35,7 +36,7 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
     }
   }
 
-  Future<void> _loadCustomer(String customerId) async {
+    Future<void> _loadCustomer(String customerId) async {
     final doc = await FirebaseFirestore.instance.collection('clientes').doc(customerId).get();
     if (doc.exists) {
       setState(() {
@@ -47,6 +48,7 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
   @override
   void dispose() {
     _orderNameController.dispose();
+    _selectedCategory.dispose();
     super.dispose();
   }
 
@@ -58,12 +60,15 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
 
   void _removeItem(String drinkId) {
     setState(() {
-      if (_orderItems.containsKey(drinkId)) {
-        if (_orderItems[drinkId]! > 1) {
-          _orderItems.update(drinkId, (value) => value - 1);
-        } else {
-          _orderItems.remove(drinkId);
-        }
+      if (_orderItems.containsKey(drinkId) && _orderItems[drinkId]! > 0) {
+        // Use setState to trigger a rebuild
+        setState(() {
+           if (_orderItems[drinkId]! > 1) {
+            _orderItems.update(drinkId, (value) => value - 1);
+          } else {
+            _orderItems.remove(drinkId);
+          }
+        });
       }
     });
   }
@@ -73,14 +78,13 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
       context: context,
       builder: (context) => const CustomerSearchDialog(),
     );
-
     if (selected != null) {
       setState(() {
         _selectedCustomer = selected;
       });
     }
   }
-
+  
   Future<void> _updateOrder() async {
     if (_orderNameController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -89,9 +93,7 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
       return;
     }
 
-    setState(() {
-      _isSaving = true;
-    });
+    setState(() => _isSaving = true);
 
     try {
       final drinksSnapshot = await FirebaseFirestore.instance.collection('bebidas').get();
@@ -124,27 +126,21 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
         'items': updatedItems,
         'total_orden': newTotal,
         'cliente_id': _selectedCustomer?.id,
-        'cliente_nombre': _selectedCustomer?.name, // Use the unified name field
+        'cliente_nombre': _selectedCustomer?.name,
         'fecha_actualizacion': FieldValue.serverTimestamp(),
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Orden actualizada con éxito')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Orden actualizada con éxito')));
         Navigator.of(context).pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al actualizar la orden: $e')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al actualizar la orden: $e')));
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
+        setState(() => _isSaving = false);
       }
     }
   }
@@ -155,137 +151,83 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(isEditing ? 'Modificar Orden' : 'Menú de Bebidas'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        title: Text(isEditing ? 'Modificar Orden' : 'Crear Nueva Orden'),
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: TextField(
               controller: _orderNameController,
               decoration: const InputDecoration(
                 labelText: 'Nombre de la Orden',
                 border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.receipt_long),
               ),
             ),
           ),
-          // Customer Selector UI
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: InkWell(
               onTap: _showCustomerSearchDialog,
               child: InputDecorator(
                 decoration: const InputDecoration(
                   labelText: 'Cliente',
                   border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: <Widget>[
-                    Text(_selectedCustomer?.name ?? 'Seleccionar un cliente'), // Use the unified name field
+                    Text(_selectedCustomer?.name ?? 'Cliente General'),
                     const Icon(Icons.arrow_drop_down),
                   ],
                 ),
               ),
             ),
           ),
-
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('bebidas')
-                  .where('inStock', isEqualTo: true)
-                  .orderBy('nombre')
-                  .snapshots(),
+              stream: FirebaseFirestore.instance.collection('bebidas').where('inStock', isEqualTo: true).snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return const Center(child: Text('Error al cargar las bebidas.'));
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return const Center(child: Text('No hay bebidas disponibles.'));
                 }
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
                 final drinks = snapshot.data!.docs;
-                final groupedDrinks = groupBy(drinks, (doc) => (doc.data() as Map)['categoria']);
-                final sortedEntries = groupedDrinks.entries.toList()
-                  ..sort((a, b) => a.key.compareTo(b.key));
+                final categories = ['Todas', ...drinks.map((d) => (d.data() as Map<String, dynamic>)['categoria']?.toString() ?? 'Sin categoría').toSet().sorted((a, b) => a.compareTo(b))];
 
-                return ListView(
-                  key: const PageStorageKey('drinksMenuListView'),
-                  children: sortedEntries.map((entry) {
-                    final sortedDrinks = entry.value..sort((a, b) {
-                      final aName = (a.data() as Map<String, dynamic>)['nombre'] as String;
-                      final bName = (b.data() as Map<String, dynamic>)['nombre'] as String;
-                      return aName.compareTo(bName);
-                    });
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildCategoryChips(categories),
+                    Expanded(
+                      child: ValueListenableBuilder<String>(
+                        valueListenable: _selectedCategory,
+                        builder: (context, category, child) {
+                          // Filter drinks based on the selected category
+                          final filteredDrinks = (category == 'Todas')
+                              ? drinks
+                              : drinks.where((d) => ((d.data() as Map<String, dynamic>)['categoria']?.toString() ?? 'Sin categoría') == category).toList();
+                          
+                          // FIX: Sort the filtered drinks alphabetically by name
+                          filteredDrinks.sort((a, b) {
+                            final aName = (a.data() as Map<String, dynamic>)['nombre'] as String;
+                            final bName = (b.data() as Map<String, dynamic>)['nombre'] as String;
+                            return aName.toLowerCase().compareTo(bName.toLowerCase());
+                          });
 
-                    return Column(
-                      key: ValueKey(entry.key),
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-                          child: Text(
-                            entry.key,
-                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                          ),
-                        ),
-                        ...sortedDrinks.map((drink) {
-                          final drinkId = drink.id;
-                          final drinkData = drink.data() as Map<String, dynamic>;
-                          final quantity = _orderItems[drinkId] ?? 0;
-
-                          return Card(
-                            // This ValueKey gives each Card a stable, unique identity.
-                            key: ValueKey(drinkId),
-                            margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12.0),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          drinkData['nombre'],
-                                          style: Theme.of(context).textTheme.titleMedium,
-                                        ),
-                                        Text(
-                                          '\$${drinkData['precio']}',
-                                          style: Theme.of(context).textTheme.bodySmall,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Row(
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent),
-                                        onPressed: () => _removeItem(drinkId),
-                                      ),
-                                      Text(
-                                        '$quantity',
-                                        style: Theme.of(context).textTheme.titleLarge,
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.add_circle_outline, color: Colors.greenAccent),
-                                        onPressed: () => _addItem(drinkId),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ],
-                    );
-                  }).toList(),
+                          return _buildDrinksGrid(filteredDrinks);
+                        },
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
@@ -303,14 +245,14 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
                           MaterialPageRoute(
                             builder: (context) => OrderSummaryScreen(
                               orderItems: _orderItems,
-                              orderName: _orderNameController.text,
+                              orderName: _orderNameController.text.isNotEmpty ? _orderNameController.text : 'Orden sin nombre',
                               customer: _selectedCustomer,
                             ),
                           ),
                         );
                       }
                     },
-              label: Text(isEditing ? 'Guardar Cambios' : 'Ver Orden'),
+              label: Text(isEditing ? 'Guardar Cambios' : 'Ver Orden (${_orderItems.values.sum})'),
               icon: _isSaving
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.black))
                   : Icon(isEditing ? Icons.save : Icons.shopping_cart),
@@ -318,9 +260,119 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
           : null,
     );
   }
+
+  Widget _buildCategoryChips(List<String> categories) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: SizedBox(
+        height: 40,
+        child: ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          scrollDirection: Axis.horizontal,
+          itemCount: categories.length,
+          separatorBuilder: (context, index) => const SizedBox(width: 8),
+          itemBuilder: (context, index) {
+            final category = categories[index];
+            return ValueListenableBuilder<String>(
+              valueListenable: _selectedCategory,
+              builder: (context, selected, child) {
+                return ChoiceChip(
+                  label: Text(category),
+                  selected: selected == category,
+                  onSelected: (isSelected) {
+                    if (isSelected) {
+                      _selectedCategory.value = category;
+                    }
+                  },
+                  selectedColor: Theme.of(context).colorScheme.secondary,
+                  labelStyle: TextStyle(
+                    color: selected == category ? Colors.black : Colors.white,
+                    fontWeight: FontWeight.bold
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20.0),
+                    side: BorderSide(
+                      color: selected == category ? Theme.of(context).colorScheme.secondary : Colors.grey[700]!,
+                    )
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrinksGrid(List<DocumentSnapshot> drinks) {
+    return GridView.builder(
+      // FIX: Add a key to the GridView to preserve scroll state on rebuilds
+      key: PageStorageKey<String>(_selectedCategory.value),
+      padding: const EdgeInsets.all(16.0),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 200,
+        childAspectRatio: 2 / 2.5,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+      ),
+      itemCount: drinks.length,
+      itemBuilder: (context, index) {
+        final drink = drinks[index];
+        final drinkId = drink.id;
+        final drinkData = drink.data() as Map<String, dynamic>;
+        final quantity = _orderItems[drinkId] ?? 0;
+
+        // By using a ValueKey on the card, we help Flutter identify which widget
+        // to update, preventing the whole list from redrawing.
+        return Card(
+          key: ValueKey(drinkId),
+          clipBehavior: Clip.antiAlias, 
+          child: InkWell(
+            onTap: () => _addItem(drinkId),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(drinkData['nombre'], textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium),
+                        const SizedBox(height: 4),
+                        Text('\$${drinkData['precio']}', style: Theme.of(context).textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                ),
+                Container(
+                  color: Colors.black.withOpacity(0.2),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove, size: 20, color: Colors.amberAccent),
+                        onPressed: () => _removeItem(drinkId),
+                        style: IconButton.styleFrom(backgroundColor: Colors.black38),
+                      ),
+                      Text('$quantity', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                      IconButton(
+                        icon: const Icon(Icons.add, size: 20, color: Colors.black),
+                        onPressed: () => _addItem(drinkId),
+                        style: IconButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.secondary),
+                      ),
+                    ],
+                  ),
+                )
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
-// Dialog for searching customers
 class CustomerSearchDialog extends StatefulWidget {
   const CustomerSearchDialog({super.key});
 
@@ -359,10 +411,7 @@ class _CustomerSearchDialogState extends State<CustomerSearchDialog> {
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
-                  // First, convert all docs to our bilingual Customer model
                   final allCustomers = snapshot.data!.docs.map((doc) => Customer.fromFirestore(doc)).toList();
-                  
-                  // Then, filter the unified list
                   final filteredCustomers = allCustomers.where((customer) {
                     final nameMatch = customer.name.toLowerCase().contains(_searchQuery);
                     final phoneMatch = customer.phone.contains(_searchQuery);
@@ -373,7 +422,6 @@ class _CustomerSearchDialogState extends State<CustomerSearchDialog> {
                     return const Center(child: Text('No se encontraron clientes.'));
                   }
 
-                  // Sort the results alphabetically
                   filteredCustomers.sort((a,b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
                   return ListView.builder(
@@ -382,12 +430,9 @@ class _CustomerSearchDialogState extends State<CustomerSearchDialog> {
                     itemBuilder: (context, index) {
                       final customer = filteredCustomers[index];
                       return ListTile(
-                        // Use the unified fields from the model
                         title: Text(customer.name),
                         subtitle: Text(customer.phone),
-                        onTap: () {
-                          Navigator.of(context).pop(customer);
-                        },
+                        onTap: () => Navigator.of(context).pop(customer),
                       );
                     },
                   );
@@ -400,9 +445,7 @@ class _CustomerSearchDialogState extends State<CustomerSearchDialog> {
       actions: <Widget>[
         TextButton(
           child: const Text('Cancelar'),
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
+          onPressed: () => Navigator.of(context).pop(),
         ),
       ],
     );
