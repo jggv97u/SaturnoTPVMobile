@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:collection/collection.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'models/customer.dart';
 import 'order_summary_screen.dart';
 
@@ -18,6 +19,7 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
   final _orderNameController = TextEditingController();
   final ValueNotifier<String> _selectedCategory = ValueNotifier('Todas');
   bool _isSaving = false;
+  bool _isFreeDrinkCouponApplied = false;
   Customer? _selectedCustomer;
 
   @override
@@ -29,6 +31,9 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
       final List<dynamic> items = orderData['items'] ?? [];
       for (var item in items) {
         _orderItems[item['id']] = item['cantidad'];
+         if (item['id'] == 'free-drink-coupon') {
+          _isFreeDrinkCouponApplied = true;
+        }
       }
       if (orderData.containsKey('cliente_id') && orderData['cliente_id'] != null) {
         _loadCustomer(orderData['cliente_id']);
@@ -67,6 +72,9 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
             _orderItems.update(drinkId, (value) => value - 1);
           } else {
             _orderItems.remove(drinkId);
+            if (drinkId == 'free-drink-coupon') {
+              _isFreeDrinkCouponApplied = false;
+            }
           }
         });
       }
@@ -84,6 +92,83 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
       });
     }
   }
+
+  Future<void> _showQrScannerDialog() async {
+    if (_isFreeDrinkCouponApplied) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ya se ha aplicado un cupón a esta orden.'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Escanear Cupón QR'),
+        content: SizedBox(
+          width: 300,
+          height: 300,
+          child: MobileScanner(
+            onDetect: (capture) async {
+              final String? couponId = capture.barcodes.first.rawValue;
+              Navigator.of(context).pop(); // Close the scanner dialog immediately
+              if (couponId != null) {
+                await _validateAndApplyCoupon(couponId);
+              }
+            },
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar'))],
+      ),
+    );
+  }
+
+  Future<void> _validateAndApplyCoupon(String couponId) async {
+    if (_isFreeDrinkCouponApplied) { // Double-check
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      final couponRef = FirebaseFirestore.instance.collection('cupones_bebidas_gratis').doc(couponId);
+      final couponDoc = await couponRef.get();
+
+      if (!couponDoc.exists) {
+        throw 'Cupón no encontrado.';
+      }
+
+      final data = couponDoc.data() as Map<String, dynamic>;
+
+      if (data['estado'] != 'valido') {
+        throw 'Este cupón ya fue utilizado o ha sido invalidado.';
+      }
+
+      if ((data['fechaExpiracion'] as Timestamp).toDate().isBefore(DateTime.now())) {
+        throw 'Este cupón ha expirado.';
+      }
+      
+      // Everything is valid, apply it.
+      await couponRef.update({'estado': 'canjeado', 'fechaCanje': FieldValue.serverTimestamp()});
+      
+      setState(() {
+        _orderItems.update('free-drink-coupon', (value) => value + 1, ifAbsent: () => 1);
+        _isFreeDrinkCouponApplied = true;
+      });
+
+       ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('¡Bebida de cortesía añadida!'), backgroundColor: Colors.green),
+      );
+
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.toString()}'), backgroundColor: Colors.red),
+      );
+    }
+    finally {
+      setState(() => _isSaving = false);
+    }
+  }
   
   Future<void> _updateOrder() async {
     if (_orderNameController.text.isEmpty) {
@@ -98,6 +183,13 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
     try {
       final drinksSnapshot = await FirebaseFirestore.instance.collection('bebidas').get();
       final allDrinks = {for (var doc in drinksSnapshot.docs) doc.id: doc.data()};
+
+      // Add special drink for coupon
+      allDrinks['free-drink-coupon'] = {
+        'nombre': 'Bebida de Cortesía (Cupón)',
+        'precio': 0.0,
+        'categoria': 'Especial'
+      };
 
       double newTotal = 0;
       final List<Map<String, dynamic>> updatedItems = [];
@@ -152,6 +244,13 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(isEditing ? 'Modificar Orden' : 'Crear Nueva Orden'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner),
+            tooltip: 'Escanear Cupón QR',
+            onPressed: _showQrScannerDialog,
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -212,9 +311,14 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
                         valueListenable: _selectedCategory,
                         builder: (context, category, child) {
                           // Filter drinks based on the selected category
-                          final filteredDrinks = (category == 'Todas')
+                          var filteredDrinks = (category == 'Todas')
                               ? drinks
                               : drinks.where((d) => ((d.data() as Map<String, dynamic>)['categoria']?.toString() ?? 'Sin categoría') == category).toList();
+
+                          if (_isFreeDrinkCouponApplied && category == 'Todas') {
+                             final freeDrinkDoc = _FakeFreeDrinkDoc();
+                             filteredDrinks = [freeDrinkDoc, ...filteredDrinks];
+                          }
                           
                           // FIX: Sort the filtered drinks alphabetically by name
                           filteredDrinks.sort((a, b) {
@@ -340,7 +444,8 @@ class _DrinksMenuScreenState extends State<DrinksMenuScreen> {
                       children: [
                         Text(drinkData['nombre'], textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium),
                         const SizedBox(height: 4),
-                        Text('\$${drinkData['precio']}', style: Theme.of(context).textTheme.bodySmall),
+                         if (drinkId != 'free-drink-coupon')
+                          Text('\$${drinkData['precio']}', style: Theme.of(context).textTheme.bodySmall),
                       ],
                     ),
                   ),
@@ -450,4 +555,31 @@ class _CustomerSearchDialogState extends State<CustomerSearchDialog> {
       ],
     );
   }
+}
+
+// A fake DocumentSnapshot for the free drink, to be able to show it in the grid.
+class _FakeFreeDrinkDoc implements DocumentSnapshot {
+  @override
+  dynamic get(Object field) => data()?[field as String];
+
+  @override
+  Map<String, dynamic> data() => {
+    'id': 'free-drink-coupon',
+    'nombre': 'Bebida de Cortesía',
+    'precio': 0,
+    'categoria': 'Especial',
+    'inStock': true,
+  };
+
+  @override
+  final String id = 'free-drink-coupon';
+
+  @override
+  final DocumentReference reference = throw UnimplementedError();
+
+  @override
+  final SnapshotMetadata metadata = throw UnimplementedError();
+
+  @override
+  final bool exists = true;
 }

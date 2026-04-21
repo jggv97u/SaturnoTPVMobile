@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'dart:math';
+import 'package:qr_flutter/qr_flutter.dart'; // Importar QR Flutter
 
 class LoyaltyLevel {
   final String name;
@@ -241,7 +242,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
               itemCount: snapshot.data!.docs.length,
               itemBuilder: (context, index) {
                 var coupon = snapshot.data!.docs[index];
-                return _buildCouponCard(coupon.data() as Map<String, dynamic>);
+                return _buildCouponCard(coupon); // Pasar el DocumentSnapshot completo
               },
             );
           },
@@ -250,8 +251,8 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     );
   }
 
-  Widget _buildCouponCard(Map<String, dynamic> couponData) {
-    final code = couponData['codigo'] ?? 'N/A';
+  Widget _buildCouponCard(DocumentSnapshot coupon) {
+    final couponData = coupon.data() as Map<String, dynamic>;
     final expiration = (couponData['fechaExpiracion'] as Timestamp).toDate();
     final formattedExpiration = DateFormat('dd/MM/yyyy, hh:mm a').format(expiration);
 
@@ -264,11 +265,33 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
           children: [
             const Text('¡BEBIDA GRATIS!', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFFFD700))),
             const SizedBox(height: 15),
-            const Icon(Icons.coffee, size: 50, color: Color(0xFFFFD700)),
+            
+            // --- INICIO DEL CAMBIO: De Texto a QR ---
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: QrImageView(
+                data: coupon.id, // Usar el ID del documento como data del QR
+                version: QrVersions.auto,
+                size: 180.0,
+                gapless: false,
+                eyeStyle: const QrEyeStyle(
+                  eyeShape: QrEyeShape.square,
+                  color: Colors.black,
+                ),
+                dataModuleStyle: const QrDataModuleStyle(
+                  dataModuleShape: QrDataModuleShape.square,
+                  color: Colors.black,
+                ),
+              ),
+            ),
             const SizedBox(height: 15),
-            Text('Usa este código en caja:', style: TextStyle(fontSize: 16, color: Colors.white70)),
-            const SizedBox(height: 5),
-            Text(code, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 2)),
+            const Text('Presenta este QR al barista para canjear', style: TextStyle(fontSize: 16, color: Colors.white70), textAlign: TextAlign.center),
+            // --- FIN DEL CAMBIO ---
+
             const SizedBox(height: 15),
             Text('Válido hasta: $formattedExpiration', style: const TextStyle(fontSize: 14, color: Colors.amber)),
           ],

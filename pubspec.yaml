@@ -24,6 +24,8 @@ dependencies:
   fl_chart: 0.68.0
   go_router: ^17.0.1
   pinput: ^6.0.1
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.2.0
 
 dev_dependencies:
   flutter_test:
