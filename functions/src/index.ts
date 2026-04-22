@@ -1,19 +1,21 @@
 
 import * as admin from "firebase-admin";
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { logger } from "firebase-functions";
 import { Order, CustomerProfile } from "./types";
 
 admin.initializeApp();
 const db = admin.firestore();
 
-// Constantes para los logros
+// --- Constantes para el Sistema 2 (Logros) ---
 const ACHIEVEMENT_EARLY_RISER = "Madrugador";
 const ACHIEVEMENT_FLAVOR_EXPLORER = "Explorador de Sabores";
 const ACHIEVEMENT_STAR_FREQUENCY = "Frecuencia Estelar";
 const FLAVOR_EXPLORER_THRESHOLD = 5; // Número de bebidas diferentes para el logro
 const STAR_FREQUENCY_THRESHOLD = 10; // Número de órdenes para el logro
 
+
+// --- FUNCIÓN EXISTENTE: Sistema de Logros ---
 export const onOrderCompleted = onDocumentCreated("orders/{orderId}", async (event) => {
   logger.info(`Nueva orden detectada: ${event.params.orderId}`);
 
@@ -25,7 +27,6 @@ export const onOrderCompleted = onDocumentCreated("orders/{orderId}", async (eve
 
   const order = snapshot.data() as Order;
 
-  // 1. Solo procesar si la orden está marcada como completada
   if (!order.completed || !order.userId || !order.items || order.items.length === 0) {
     logger.info(`La orden ${event.params.orderId} no está lista para procesar.`);
     return;
@@ -38,7 +39,6 @@ export const onOrderCompleted = onDocumentCreated("orders/{orderId}", async (eve
     await db.runTransaction(async (transaction) => {
       const userProfileDoc = await transaction.get(userProfileRef);
 
-      // Si no existe perfil, lo creamos vacío
       if (!userProfileDoc.exists) {
           const initialProfile: CustomerProfile = {
               drinkCounts: {},
@@ -50,17 +50,13 @@ export const onOrderCompleted = onDocumentCreated("orders/{orderId}", async (eve
       
       const userProfile = (userProfileDoc.data() || { drinkCounts: {}, achievements: [], totalOrders: 0 }) as CustomerProfile;
 
-
-      // 2. Actualizar preferencias del cliente
       const lastDrink = items[0].name;
       userProfile.lastDrink = lastDrink;
 
-      // Actualizar conteo de bebidas
       items.forEach(item => {
         userProfile.drinkCounts[item.name] = (userProfile.drinkCounts[item.name] || 0) + 1;
       });
 
-      // Determinar bebida favorita
       let favoriteDrink = "";
       let maxCount = 0;
       for (const drink in userProfile.drinkCounts) {
@@ -71,27 +67,22 @@ export const onOrderCompleted = onDocumentCreated("orders/{orderId}", async (eve
       }
       userProfile.favoriteDrink = favoriteDrink;
       
-      // Incrementar el total de órdenes
       userProfile.totalOrders = (userProfile.totalOrders || 0) + 1;
 
-      // 3. Otorgar logros
       const achievements = userProfile.achievements || [];
 
-      // Logro: Madrugador (antes de las 9 AM)
       const orderHour = createdAt.toDate().getHours();
       if (orderHour < 9 && !achievements.includes(ACHIEVEMENT_EARLY_RISER)) {
         achievements.push(ACHIEVEMENT_EARLY_RISER);
         logger.info(`¡Logro desbloqueado para ${userId}: ${ACHIEVEMENT_EARLY_RISER}!`);
       }
 
-      // Logro: Explorador de Sabores
       const uniqueDrinksCount = Object.keys(userProfile.drinkCounts).length;
       if (uniqueDrinksCount >= FLAVOR_EXPLORER_THRESHOLD && !achievements.includes(ACHIEVEMENT_FLAVOR_EXPLORER)) {
         achievements.push(ACHIEVEMENT_FLAVOR_EXPLORER);
         logger.info(`¡Logro desbloqueado para ${userId}: ${ACHIEVEMENT_FLAVOR_EXPLORER}!`);
       }
       
-      // Logro: Frecuencia Estelar
       if (userProfile.totalOrders >= STAR_FREQUENCY_THRESHOLD && !achievements.includes(ACHIEVEMENT_STAR_FREQUENCY)) {
         achievements.push(ACHIEVEMENT_STAR_FREQUENCY);
         logger.info(`¡Logro desbloqueado para ${userId}: ${ACHIEVEMENT_STAR_FREQUENCY}!`);
@@ -99,11 +90,76 @@ export const onOrderCompleted = onDocumentCreated("orders/{orderId}", async (eve
 
       userProfile.achievements = achievements;
 
-      // Guardar todos los cambios en el perfil del usuario
       transaction.update(userProfileRef, { ...userProfile });
       logger.info(`Perfil del usuario ${userId} actualizado correctamente.`);
     });
   } catch (error) {
     logger.error(`Error al procesar la orden ${event.params.orderId} para el usuario ${userId}:`, error);
+  }
+});
+
+
+// --- NUEVA FUNCIÓN: Sistema de Puntos y Cupones (Robusta y sin duplicación) ---
+export const onClienteUpdated = onDocumentUpdated("clientes/{clienteId}", async (event) => {
+  logger.info(`INICIO de ejecución para cliente: ${event.params.clienteId}`);
+  
+  const beforeData = event.data?.before.data();
+  const afterData = event.data?.after.data();
+
+  // Comprobación de seguridad: nos aseguramos de tener los datos necesarios.
+  if (!beforeData || !afterData || typeof afterData.puntos !== 'number' || typeof beforeData.puntos !== 'number') {
+    logger.warn("Datos incompletos o 'puntos' no es un número. Terminando función.");
+    return;
+  }
+  
+  const puntosAntes = beforeData.puntos;
+  const puntosDespues = afterData.puntos;
+  const PUNTOS_POR_CUPON = 7;
+
+  // --- CONDICIÓN MEJORADA ---
+  // La función solo actúa si los puntos AUMENTARON y cruzaron el umbral.
+  // Esto evita que se ejecute en bucle o por otras actualizaciones.
+  if (puntosDespues > puntosAntes && puntosDespues >= PUNTOS_POR_CUPON) {
+    logger.info(`Cliente ${event.params.clienteId} cruzó el umbral de ${PUNTOS_POR_CUPON} puntos. Puntos antes: ${puntosAntes}, Puntos después: ${puntosDespues}`);
+
+    // Usaremos un "batch write" que funciona de forma similar a una transacción para este caso.
+    const batch = db.batch();
+
+    const cuponesAGenerar = Math.floor(puntosDespues / PUNTOS_POR_CUPON);
+    const puntosRestantes = puntosDespues % PUNTOS_POR_CUPON;
+
+    logger.info(`Generando ${cuponesAGenerar} cupón(es) y estableciendo los puntos del cliente a ${puntosRestantes}.`);
+
+    // 1. Generamos todos los cupones necesarios
+    for (let i = 0; i < cuponesAGenerar; i++) {
+      const nuevoCuponRef = db.collection("cupones_bebidas_gratis").doc();
+      const fechaExpiracion = new Date();
+      fechaExpiracion.setDate(fechaExpiracion.getDate() + 7); // El cupón expira en 7 días
+
+      batch.set(nuevoCuponRef, {
+        clienteId: event.params.clienteId,
+        codigo: `SAT-${nuevoCuponRef.id.substring(0, 8).toUpperCase()}`,
+        fechaCreacion: admin.firestore.FieldValue.serverTimestamp(),
+        fechaExpiracion: admin.firestore.Timestamp.fromDate(fechaExpiracion),
+        estado: "valido",
+        origen: "Canje de Puntos (Cloud Fx)",
+      });
+    }
+
+    // 2. Actualizamos los puntos del cliente a su nuevo total
+    const clienteRef = db.collection("clientes").doc(event.params.clienteId);
+    batch.update(clienteRef, { puntos: puntosRestantes });
+
+    // 3. Ejecutamos todas las operaciones como un solo lote atómico.
+    // Si algo falla, ninguna de las operaciones se aplica.
+    try {
+      await batch.commit();
+      logger.info(`Lote completado: ${cuponesAGenerar} cupón(es) creado(s) y puntos actualizados a ${puntosRestantes} para ${event.params.clienteId}.`);
+    } catch (error) {
+      logger.error(`Error al ejecutar el lote para el cliente ${event.params.clienteId}:`, error);
+    }
+
+  } else {
+    logger.info(`No se cumplieron las condiciones para generar cupón para ${event.params.clienteId}. Puntos antes: ${puntosAntes}, Puntos después: ${puntosDespues}. Terminando ejecución.`);
   }
 });

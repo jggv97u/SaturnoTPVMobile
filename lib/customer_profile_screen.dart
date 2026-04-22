@@ -100,23 +100,9 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
 
   void _handleCustomerDataChanges(Customer customer) {
     if (!mounted) return;
-    _handlePointsToCouponConversion(customer);
     _handleGalacticCommanderReward(customer);
   }
 
-  void _handlePointsToCouponConversion(Customer customer) {
-    const pointsPerCoupon = 7;
-    if (customer.puntos >= pointsPerCoupon) {
-      final couponsToGenerate = customer.puntos ~/ pointsPerCoupon;
-      final remainingPoints = customer.puntos % pointsPerCoupon;
-
-      for (int i = 0; i < couponsToGenerate; i++) {
-        _generateFreeDrinkCoupon(customer.id, 'Canje de Puntos');
-      }
-
-      _firestore.collection('clientes').doc(customer.id).update({'puntos': remainingPoints});
-    }
-  }
 
   void _handleGalacticCommanderReward(Customer customer) {
     // Corrected Logic: Only grant the reward if visits are sufficient AND it hasn't been claimed.
