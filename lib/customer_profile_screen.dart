@@ -59,7 +59,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     final customerDocRef = await _getCustomerDocRef(user);
     if (customerDocRef != null) {
       setState(() {
-        // Use a stream of the unified Customer model
         _customerStream = customerDocRef.snapshots().map((doc) => Customer.fromFirestore(doc));
         
         _couponsStream = _firestore
@@ -80,14 +79,13 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
 
     final querySnapshot = await _firestore
         .collection('clientes')
-        .where('phone', isEqualTo: phoneNumber) // Search by the full phone number
+        .where('phone', isEqualTo: phoneNumber)
         .limit(1)
         .get();
 
     if (querySnapshot.docs.isNotEmpty) {
       return querySnapshot.docs.first.reference;
     } else {
-      // Fallback for old data structure
       final oldUserQuery = await _firestore
         .collection('clientes')
         .where('telefono', isEqualTo: phoneNumber.substring(3))
@@ -97,7 +95,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
          return oldUserQuery.docs.first.reference;
        }
     }
-    return null; // No customer found
+    return null;
   }
 
   void _handleCustomerDataChanges(Customer customer) {
@@ -121,12 +119,12 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
   }
 
   void _handleGalacticCommanderReward(Customer customer) {
-    final hasClaimedReward = (customer.visitas >= 50) && (customer.ultimaVisita != null); // Simple logic
-    //This should query a specific field in firestore, but we simplify for now
-
-    if (customer.visitas >= 50 && !hasClaimedReward) {
+    // Corrected Logic: Only grant the reward if visits are sufficient AND it hasn't been claimed.
+    if (customer.visitas >= 50 && !customer.claimedCommanderReward) {
       _generateFreeDrinkCoupon(customer.id, 'Recompensa Comandante');
-       _firestore.collection('clientes').doc(customer.id).update({'claimedCommanderReward': true});
+      
+      // Mark the reward as claimed to prevent re-issuing.
+      _firestore.collection('clientes').doc(customer.id).update({'claimedCommanderReward': true});
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -175,7 +173,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             return const Center(child: CircularProgressIndicator(color: Color(0xFFFFD700)));
           }
           if (snapshot.hasError || !snapshot.hasData) {
-            return _buildNotFoundView(); // Handle error or no data case
+            return _buildNotFoundView();
           }
           final customer = snapshot.data!;
           return _buildProfileView(customer);
@@ -385,4 +383,3 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     );
   }
 }
-

@@ -4,10 +4,11 @@ class Customer {
   final String id;
   final String name;
   final String phone;
-  final int puntos; // Standardized to Spanish
-  final int visitas; // Add visits
+  final int puntos;
+  final int visitas;
   final DateTime createdAt;
-  final DateTime? ultimaVisita; // Add last visit
+  final DateTime? ultimaVisita;
+  final bool claimedCommanderReward; // New field for the reward
 
   Customer({
     required this.id,
@@ -17,6 +18,7 @@ class Customer {
     required this.visitas,
     required this.createdAt,
     this.ultimaVisita,
+    this.claimedCommanderReward = false, // Default to false
   });
 
   factory Customer.fromFirestore(DocumentSnapshot doc) {
@@ -29,7 +31,6 @@ class Customer {
       phone = '+52$phone';
     }
 
-    // Prioritize Spanish field names, but fall back for older data
     final int puntos = (data['puntos'] ?? data['points'] ?? 0) as int;
     final int visitas = (data['visitas'] ?? 0) as int;
     
@@ -38,6 +39,9 @@ class Customer {
     
     final Timestamp? ultimaVisitaTimestamp = data['ultima_visita'] as Timestamp?;
     final DateTime? ultimaVisita = ultimaVisitaTimestamp?.toDate();
+    
+    // Read the reward flag, defaulting to false if it doesn't exist
+    final bool claimedCommanderReward = (data['claimedCommanderReward'] ?? false) as bool;
 
     return Customer(
       id: doc.id,
@@ -47,6 +51,7 @@ class Customer {
       visitas: visitas,
       createdAt: createdAt,
       ultimaVisita: ultimaVisita,
+      claimedCommanderReward: claimedCommanderReward,
     );
   }
 }

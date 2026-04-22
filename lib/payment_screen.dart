@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:saturnotpv/models/customer.dart';
 import 'receipt_screen.dart';
 import 'dart:developer' as developer;
 
@@ -58,68 +59,71 @@ class _PaymentScreenState extends State<PaymentScreen> {
         final DocumentReference orderRef = widget.order.reference;
         DocumentReference? customerRef;
         DocumentSnapshot? customerDoc;
+        Customer? customer;
+
+        // Fetch customer data early to determine points multiplier
+        if (customerId != null) {
+          customerRef = _firestore.collection('clientes').doc(customerId);
+          customerDoc = await transaction.get(customerRef);
+          if (customerDoc.exists) {
+            customer = Customer.fromFirestore(customerDoc);
+          }
+        }
 
         // 1. Calculate points and costs
-        int pointsEarned = 0;
+        double basePoints = 0;
         double totalCosto = 0.0;
         List<Map<String, dynamic>> itemsConCosto = [];
 
         for (var item in items) {
           final itemMap = Map<String, dynamic>.from(item as Map);
           final productId = itemMap['id'];
-          final cantidad = (itemMap['cantidad'] ?? 0) as int; 
-          pointsEarned += cantidad;
+          final cantidad = (itemMap['cantidad'] ?? 0) as int;
+          basePoints += cantidad;
           double costoUnitario = 0.0;
 
           if (productId != null) {
-             final productDocRef = _firestore.collection('bebidas').doc(productId);
-             final productDoc = await transaction.get(productDocRef);
+            final productDocRef = _firestore.collection('bebidas').doc(productId);
+            final productDoc = await transaction.get(productDocRef);
             if (productDoc.exists) {
               final productData = productDoc.data() as Map<String, dynamic>;
               costoUnitario = (productData['costo'] ?? 0.0).toDouble();
             } else {
-              developer.log('Producto con ID: $productId no encontrado.', name: 'saturnotrc.payment');
+              developer.log('Producto con ID: $productId no encontrado.',
+                  name: 'saturnotrc.payment');
             }
           }
           itemMap['costo_unitario'] = costoUnitario;
           itemsConCosto.add(itemMap);
           totalCosto += costoUnitario * cantidad;
         }
+        
+        // Determine points multiplier based on customer's visits
+        double multiplier = 1.0;
+        if (customer != null) {
+          if (customer.visitas >= 50) {
+            multiplier = 1.5;
+          } else if (customer.visitas >= 15) {
+            multiplier = 1.25;
+          }
+        }
+
+        final int pointsEarned = (basePoints * multiplier).round();
 
         // 2. Handle customer points and visits if a customer is linked
-        if (customerId != null) {
-          customerRef = _firestore.collection('clientes').doc(customerId);
-          customerDoc = await transaction.get(customerRef);
-
-          if (customerDoc.exists) {
-            final customerData = customerDoc!.data() as Map<String, dynamic>;
-            final currentPoints = (customerData['puntos'] ?? 0) as int;
+        if (customer != null && customerRef != null) {
+            final currentPoints = customer.puntos;
             final newTotalPoints = currentPoints + pointsEarned;
 
-            // Common updates for any visit
             final visitUpdateData = {
               'visitas': FieldValue.increment(1),
               'ultima_visita': FieldValue.serverTimestamp(),
+              'puntos': newTotalPoints,
             };
 
-            if (newTotalPoints >= 7) {
-              // Reward achieved: reset points, add reward, and update visit info
-              transaction.update(customerRef, {
-                ...visitUpdateData,
-                'puntos': 0, 
-                'recompensas': FieldValue.increment(1),
-                'ultima_recompensa': FieldValue.serverTimestamp(),
-              });
-            } else {
-              // No reward yet: just increment points and update visit info
-              transaction.update(customerRef, {
-                ...visitUpdateData,
-                'puntos': newTotalPoints,
-              });
-            }
-          }
+            transaction.update(customerRef, visitUpdateData);
         }
-        
+
         // 3. Archive the order
         final newArchivedOrderRef = _firestore.collection('ordenes_archivadas').doc(orderRef.id);
         final archivedOrderData = {
@@ -131,6 +135,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           'items': itemsConCosto,
           'total_costo': totalCosto,
           'puntos_ganados': pointsEarned,
+          'multiplicador_puntos': multiplier, // Store the multiplier used
         };
         transaction.set(newArchivedOrderRef, archivedOrderData);
 
@@ -148,8 +153,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
       }
     } catch (e, s) {
       developer.log(
-        'Error al archivar la venta.',
-        name: 'saturnotrc.payment.archive',
+        'Error al finalizar el pago.',
+        name: 'saturnotrc.payment.finalize',
         error: e,
         stackTrace: s,
       );
@@ -164,7 +169,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
       }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
