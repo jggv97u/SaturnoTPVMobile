@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+
 import 'drinks_menu_screen.dart';
 import 'order_detail_screen.dart';
 
@@ -12,6 +13,81 @@ class ActiveOrdersScreen extends StatefulWidget {
 }
 
 class _ActiveOrdersScreenState extends State<ActiveOrdersScreen> {
+  Future<void> _showManualIdInputDialog() async {
+    final textController = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Introducir Código Manualmente'),
+        content: TextField(
+          controller: textController,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'Escribe el ID del cliente o producto',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final text = textController.text.trim();
+              if (text.isNotEmpty) {
+                Navigator.pop(context, text);
+              }
+            },
+            child: const Text('Buscar'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && result.isNotEmpty && mounted) {
+      // Intenta buscar en clientes primero
+      final customerDoc = await FirebaseFirestore.instance
+          .collection('clientes')
+          .doc(result)
+          .get();
+
+      if (customerDoc.exists && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cliente encontrado: ${customerDoc.data()?['nombre'] ?? 'Sin nombre'}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        return; 
+      }
+
+      // Si no es un cliente, intenta buscar en productos
+      final productDoc = await FirebaseFirestore.instance
+          .collection('productos')
+          .doc(result)
+          .get();
+
+      if (productDoc.exists && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Producto encontrado: ${productDoc.data()?['nombre'] ?? 'Sin nombre'}'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+        return; 
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se encontró ningún cliente o producto con ese ID.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -27,9 +103,19 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen> {
             const Text('Órdenes Activas'),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: 'Buscar por Código',
+            onPressed: _showManualIdInputDialog,
+          ),
+        ],
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('pedidos').where('activa', isEqualTo: true).snapshots(),
+        stream: FirebaseFirestore.instance
+            .collection('pedidos')
+            .where('activa', isEqualTo: true)
+            .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return const Center(child: Text('Error al cargar las órdenes.'));
@@ -40,7 +126,7 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen> {
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return const Center(
               child: Text(
-                'No hay órdenes activas.\n\nPresiona el botón + para crear una nueva.',
+                'No hay órdenes activas.\nPresiona el botón + para crear una nueva.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 16),
               ),
@@ -54,17 +140,23 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen> {
               final orderData = order.data() as Map<String, dynamic>;
 
               return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                margin:
+                    const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                 child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
-                  title: Text(orderData['nombre_orden'] ?? 'Orden sin nombre', style: Theme.of(context).textTheme.titleMedium),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20.0, vertical: 10.0),
+                  title: Text(orderData['nombre_orden'] ?? 'Orden sin nombre',
+                      style: Theme.of(context).textTheme.titleMedium),
                   subtitle: Text(
                     'Total: \$${(orderData['total_orden'] ?? 0.0).toStringAsFixed(2)}',
-                    style: TextStyle(color: Theme.of(context).colorScheme.secondary, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.secondary,
+                        fontWeight: FontWeight.bold),
                   ),
-                  trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white54),
+                  trailing:
+                      const Icon(Icons.arrow_forward_ios, color: Colors.white54),
                   onTap: () {
-                    Navigator.push(
+                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) => OrderDetailScreen(order: order),

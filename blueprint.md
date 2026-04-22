@@ -1,64 +1,60 @@
-# Blueprint de SaturnoTPV
+# Blueprint de la Aplicación Flutter de Lealtad
 
 ## Descripción General
 
-Este documento detalla el estado actual y las características de la aplicación SaturnoTPV, un punto de venta y sistema de gestión desarrollado en Flutter.
+Esta es una aplicación de Flutter diseñada como un programa de lealtad para una cafetería. Permite a los usuarios realizar pedidos, hacer un seguimiento de sus bebidas favoritas y desbloquear logros. La aplicación se integra con Firebase para la autenticación, la base de datos y la lógica del lado del servidor a través de Cloud Functions.
 
-## Estilo, Diseño y Características (Versión Inicial)
+## Estilo y Diseño
 
-Esta sección documenta el estado del proyecto después de los cambios iniciales de branding.
+- **Tema:** Moderno y limpio, utilizando Material 3.
+- **Paleta de colores:** Centrada en un `primarySeedColor` (actualmente Morado Profundo) para generar esquemas de colores claros y oscuros armoniosos.
+- **Tipografía:** `GoogleFonts` para una apariencia pulida y legible (Oswald, Roboto, Open Sans).
+- **Componentes:** Estilos consistentes para `AppBar`, `ElevatedButton`, etc., definidos en el tema para garantizar la uniformidad.
+- **Modo Oscuro:** Soporte completo para los modos claro y oscuro, con un interruptor para que el usuario elija.
 
-*   **Nombre de la Aplicación:** `SaturnoTPV`
-*   **Descripción:** "Punto de venta y sistema de gestión para Saturno."
-*   **Ícono Principal:** Se utiliza un logo vectorial (`logo.svg`) ubicado en la carpeta `web/`. Este ícono se emplea como favicon y como ícono de la aplicación web instalable (PWA).
-*   **Plataforma Principal:** Aplicación web.
+## Características Implementadas
 
-### Cambios Realizados:
+- **Gestión de Tema:**
+  - Se utiliza el paquete `provider` para gestionar el estado del tema.
+  - `ThemeProvider` permite cambiar entre los modos claro, oscuro y del sistema.
+  - El tema se genera dinámicamente a partir de un color semilla (`ColorScheme.fromSeed`).
 
-1.  **Renombrado del Proyecto:**
-    *   Se actualizó `pubspec.yaml` para reflejar el nuevo nombre `SaturnoTPV`.
-    *   Se modificó `web/index.html` para cambiar el título de la página.
-    *   Se ajustó `web/manifest.json` para establecer el `name` y `short_name` a `SaturnoTPV`.
+- **Navegación:**
+  - Se implementó un sistema de navegación básico utilizando `Navigator.push`.
+  - Se crearon rutas para una pantalla de inicio (`MyHomePage`) y una pantalla de perfil (`ProfileScreen`).
 
-2.  **Personalización del Ícono:**
-    *   Se subió el archivo `logo.svg` a la carpeta `web/`.
-    *   Se actualizó `web/index.html` para usar `logo.svg` como favicon.
-    *   Se reconfiguró `web/manifest.json` para que el `logo.svg` sea el ícono principal de la aplicación, reemplazando los íconos PNG por defecto.
-    *   Se eliminaron los archivos de íconos PNG genéricos (`Icon-192.png`, `Icon-512.png`, etc.) y `favicon.png` para limpiar el proyecto.
+- **Pantallas y UI:**
+  - **Pantalla de Inicio (`MyHomePage`):**
+    - Muestra una lista de ejemplo de elementos de menú.
+    - Contiene botones para navegar al perfil y para simular la adición de un pedido.
+    - Incluye un carrusel de imágenes para mostrar ofertas o artículos destacados.
+  - **Pantalla de Perfil (`ProfileScreen`):**
+    - Muestra los detalles del perfil del usuario obtenidos de Firestore.
+    - Muestra logros, bebida favorita y estadísticas de pedidos.
+    - Se actualiza en tiempo real gracias a un `StreamBuilder`.
 
-3.  **Corrección de Errores y Despliegue:**
-    *   Se corrigieron múltiples errores de importación en toda la aplicación que impedían la compilación.
-    *   Se realizó el despliegue inicial de la aplicación en Firebase Hosting.
-    *   Se inicializó el repositorio de Git y se guardó el estado del proyecto.
+- **Integración con Firebase:**
+  - **Firestore:**
+    - Colección `customerProfiles`: Almacena los datos de lealtad de cada usuario.
+    - Colección `orders`: Almacena los pedidos realizados por los usuarios.
+    - Reglas de seguridad configuradas para permitir la lectura/escritura a usuarios autenticados.
+  - **Autenticación:**
+    - Configurada la autenticación con Google Sign-In.
+    - La lógica de la aplicación maneja el estado de autenticación para mostrar la pantalla correcta (inicio de sesión o pantalla de inicio).
+  - **Cloud Functions (¡NUEVO!):**
+    - **`onOrderCompleted`**: Una función de fondo (background function) escrita en TypeScript que se activa (`onDocumentCreated`) cada vez que se añade un nuevo documento a la colección `/orders/{orderId}`.
+    - **Lógica de la Función:**
+      1. Lee los datos del nuevo pedido.
+      2. Obtiene el `userId` y los `items` del pedido.
+      3. Busca el documento correspondiente en la colección `customerProfiles`.
+      4. Actualiza el perfil del cliente con:
+         - La última bebida pedida.
+         - Un recuento de cada tipo de bebida.
+         - El número total de pedidos.
+         - Desbloquea logros basados en la cantidad de pedidos (por ejemplo, "Primer Pedido", "Leal").
+    - **Despliegue y Configuración:** Se ha configurado un pipeline de despliegue robusto con `eslint` para el análisis de código y `tsc` para la compilación de TypeScript.
 
-## Característica Completada: Renovación de la Pantalla de Reportes
-
-Se ha llevado a cabo una reestructuración completa de la pantalla de "Análisis de Rentabilidad" para convertirla en una herramienta de inteligencia de negocios potente y visualmente intuitiva.
-
-### Mejoras Implementadas:
-
-1.  **Filtros de Fecha Dinámicos:**
-    *   Se implementaron filtros por rango de fechas (`_startDate`, `_endDate`).
-    *   Se añadieron **filtros rápidos** con botones para "Hoy", "Semana" y "Mes", mejorando drásticamente la usabilidad.
-    *   La interfaz de selección de fecha personalizada ahora solo aparece cuando es necesaria.
-
-2.  **Visualización de Datos Financieros:**
-    *   **Tarjetas de Resumen:** Se muestran métricas clave como "Ganancia Neta", "Ingresos", "Costos" y "Gastos" en tarjetas destacadas.
-    *   **Gráfico de Resumen Financiero:** Un gráfico de barras compara visualmente los ingresos, costos y gastos totales.
-    *   **Presupuesto vs. Gasto:** Se implementó una sección que compara el presupuesto asignado con el gasto real para categorías clave (`Rentas y servicios`, `Otros gastos`, etc.) utilizando barras de progreso.
-
-3.  **Análisis de Ventas de Productos:**
-    *   Inicialmente se implementó un gráfico de barras con el "Top 5 de Bebidas más Vendidas".
-    *   Posteriormente, se reemplazó por un **gráfico de pastel** que muestra la proporción de ventas de cada bebida, ofreciendo una visión más clara de la distribución.
-
-4.  **Corrección de Dependencias y Despliegue Final:**
-    *   Se encontró y solucionó un **conflicto de versiones** con la librería `fl_chart`. El problema se resolvió forzando el uso de la versión `0.68.0`, que es estable y compatible con el código implementado.
-    *   Tras superar los errores de compilación, la aplicación fue compilada para la web (`flutter build web`) y desplegada con éxito en Firebase Hosting.
-
-## Plan de Cambios Actual: Consolidación en Git
-
-El trabajo en la pantalla de reportes ha concluido. El siguiente paso es guardar todos los cambios en el repositorio de Git para versionar el progreso y asegurar la integridad del código.
-
-**Pasos:**
-1.  Añadir todos los archivos modificados al "stage" de Git (`git add .`).
-2.  Crear un "commit" con un mensaje descriptivo que encapsule todas las mejoras realizadas.
+- **Estructura del Proyecto:**
+  - Código de la aplicación Flutter en la carpeta `lib`.
+  - Código de las Cloud Functions en la carpeta `functions`, escrito en TypeScript.
+  - Configuración de Firebase (`firebase.json`) y reglas de Firestore (`firestore.rules`) en la raíz del proyecto.

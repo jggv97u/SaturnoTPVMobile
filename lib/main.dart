@@ -74,7 +74,7 @@ class MyApp extends StatelessWidget {
       ),
        GoRoute(
         path: '/pos',
-        builder: (context, state) => const ActiveOrdersScreen(),
+        builder: (context, state) => ActiveOrdersScreen(),
       ),
       GoRoute(
         path: '/login',

@@ -19,8 +19,16 @@
 
   <title>SaturnoTPV</title>
   <link rel="manifest" href="manifest.json">
+
+  <script>
+    window.flutterConfiguration = {
+      canvasKitBaseUrl: "https://unpkg.com/canvaskit-wasm@0.35.0/bin/"
+    };
+  </script>
+
 </head>
 <body>
+  <div id="mobile-scanner-container"></div>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

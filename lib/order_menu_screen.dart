@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:saturnotpv/coupon_scanner_screen.dart';
 
 class OrderMenuScreen extends StatefulWidget {
   const OrderMenuScreen({super.key});
@@ -31,11 +32,69 @@ class _OrderMenuScreenState extends State<OrderMenuScreen> {
     });
   }
 
+  Future<void> _redeemCoupon(String couponId) async {
+    if (!mounted) return;
+
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    try {
+      final couponDocRef = FirebaseFirestore.instance.collection('cupones_bebidas_gratis').doc(couponId);
+      final couponDoc = await couponDocRef.get();
+
+      if (!couponDoc.exists) {
+        scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Error: Cupón no encontrado.'), backgroundColor: Colors.red));
+        return;
+      }
+
+      final data = couponDoc.data()!;
+      final estado = data['estado'] as String? ?? 'desconocido';
+      final fechaExpiracion = (data['fechaExpiracion'] as Timestamp).toDate();
+
+      if (estado != 'valido') {
+        scaffoldMessenger.showSnackBar(SnackBar(content: Text('Error: El cupón ya fue $estado.'), backgroundColor: Colors.orange));
+        return;
+      }
+
+      if (DateTime.now().isAfter(fechaExpiracion)) {
+        scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Error: El cupón ha expirado.'), backgroundColor: Colors.orange));
+        return;
+      }
+
+      // Si todo es correcto, se canjea el cupón
+      await couponDocRef.update({
+        'estado': 'usado',
+        'fechaCanje': Timestamp.now(),
+        // 'canjeadoPor': FirebaseAuth.instance.currentUser?.uid, // Opcional: guardar quién lo canjeó
+      });
+
+      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('¡Éxito! Cupón de bebida gratis canjeado.'), backgroundColor: Colors.green));
+
+    } catch (e) {
+      scaffoldMessenger.showSnackBar(SnackBar(content: Text('Error inesperado al canjear el cupón: $e'), backgroundColor: Colors.red));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Crea tu Pedido Express'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner),
+            onPressed: () async {
+              final result = await Navigator.of(context).push<String>(
+                MaterialPageRoute(
+                  builder: (context) => const CouponScannerScreen(),
+                ),
+              );
+              if (result != null) {
+                _redeemCoupon(result);
+              }
+            },
+            tooltip: 'Escanear Cupón QR',
+          ),
+        ],
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
@@ -136,7 +195,6 @@ class _OrderMenuScreenState extends State<OrderMenuScreen> {
       floatingActionButton: _orderItems.isNotEmpty
           ? FloatingActionButton.extended(
               onPressed: () {
-                // Navegar a la pantalla de resumen, pasando el carrito.
                 context.go('/order-summary', extra: _orderItems);
               },
               label: const Text('Ver Orden'),

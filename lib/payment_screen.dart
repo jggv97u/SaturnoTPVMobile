@@ -67,13 +67,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
         for (var item in items) {
           final itemMap = Map<String, dynamic>.from(item as Map);
           final productId = itemMap['id'];
-          final cantidad = (itemMap['cantidad'] ?? 0) as int; // Each drink is a point
+          final cantidad = (itemMap['cantidad'] ?? 0) as int; 
           pointsEarned += cantidad;
           double costoUnitario = 0.0;
 
           if (productId != null) {
              final productDocRef = _firestore.collection('bebidas').doc(productId);
-             final productDoc = await transaction.get(productDocRef); // Get product within transaction
+             final productDoc = await transaction.get(productDocRef);
             if (productDoc.exists) {
               final productData = productDoc.data() as Map<String, dynamic>;
               costoUnitario = (productData['costo'] ?? 0.0).toDouble();
@@ -86,26 +86,36 @@ class _PaymentScreenState extends State<PaymentScreen> {
           totalCosto += costoUnitario * cantidad;
         }
 
-        // 2. Handle customer points if a customer is linked
+        // 2. Handle customer points and visits if a customer is linked
         if (customerId != null) {
           customerRef = _firestore.collection('clientes').doc(customerId);
-          customerDoc = await transaction.get(customerRef); // Get customer within transaction
+          customerDoc = await transaction.get(customerRef);
 
           if (customerDoc.exists) {
             final customerData = customerDoc!.data() as Map<String, dynamic>;
             final currentPoints = (customerData['puntos'] ?? 0) as int;
             final newTotalPoints = currentPoints + pointsEarned;
 
+            // Common updates for any visit
+            final visitUpdateData = {
+              'visitas': FieldValue.increment(1),
+              'ultima_visita': FieldValue.serverTimestamp(),
+            };
+
             if (newTotalPoints >= 7) {
-              // Reward achieved
+              // Reward achieved: reset points, add reward, and update visit info
               transaction.update(customerRef, {
-                'puntos': 0, // Reset points
+                ...visitUpdateData,
+                'puntos': 0, 
                 'recompensas': FieldValue.increment(1),
                 'ultima_recompensa': FieldValue.serverTimestamp(),
               });
             } else {
-              // Just increment points
-              transaction.update(customerRef, {'puntos': newTotalPoints});
+              // No reward yet: just increment points and update visit info
+              transaction.update(customerRef, {
+                ...visitUpdateData,
+                'puntos': newTotalPoints,
+              });
             }
           }
         }

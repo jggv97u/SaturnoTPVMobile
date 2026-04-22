@@ -103,7 +103,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                         title: Text(customer.name,
                             style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Text(customer.phone),
-                        trailing: Text('${customer.points} pts',
+                        trailing: Text('${customer.puntos} pts',
                             style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
