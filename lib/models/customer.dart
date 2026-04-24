@@ -8,7 +8,9 @@ class Customer {
   final int visitas;
   final DateTime createdAt;
   final DateTime? ultimaVisita;
-  final bool claimedCommanderReward; // New field for the reward
+  final bool claimedCommanderReward;
+  final String? favoriteDrink;
+  final String? lastDrink; // <-- CAMPO NUEVO
 
   Customer({
     required this.id,
@@ -18,7 +20,9 @@ class Customer {
     required this.visitas,
     required this.createdAt,
     this.ultimaVisita,
-    this.claimedCommanderReward = false, // Default to false
+    this.claimedCommanderReward = false,
+    this.favoriteDrink,
+    this.lastDrink, // <-- CAMPO NUEVO
   });
 
   factory Customer.fromFirestore(DocumentSnapshot doc) {
@@ -40,8 +44,10 @@ class Customer {
     final Timestamp? ultimaVisitaTimestamp = data['ultima_visita'] as Timestamp?;
     final DateTime? ultimaVisita = ultimaVisitaTimestamp?.toDate();
     
-    // Read the reward flag, defaulting to false if it doesn't exist
     final bool claimedCommanderReward = (data['claimedCommanderReward'] ?? false) as bool;
+    
+    final String? favoriteDrink = data['favoriteDrink'] as String?;
+    final String? lastDrink = data['lastDrink'] as String?; // <-- CAMPO NUEVO
 
     return Customer(
       id: doc.id,
@@ -52,6 +58,8 @@ class Customer {
       createdAt: createdAt,
       ultimaVisita: ultimaVisita,
       claimedCommanderReward: claimedCommanderReward,
+      favoriteDrink: favoriteDrink,
+      lastDrink: lastDrink, // <-- CAMPO NUEVO
     );
   }
 }

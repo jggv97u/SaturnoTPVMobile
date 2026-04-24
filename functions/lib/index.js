@@ -6,107 +6,113 @@ const firestore_1 = require("firebase-functions/v2/firestore");
 const firebase_functions_1 = require("firebase-functions");
 admin.initializeApp();
 const db = admin.firestore();
-// --- Constantes para el Sistema 2 (Logros) ---
+// --- Constantes para Logros ---
 const ACHIEVEMENT_EARLY_RISER = "Madrugador";
 const ACHIEVEMENT_FLAVOR_EXPLORER = "Explorador de Sabores";
 const ACHIEVEMENT_STAR_FREQUENCY = "Frecuencia Estelar";
-const FLAVOR_EXPLORER_THRESHOLD = 5; // Número de bebidas diferentes para el logro
-const STAR_FREQUENCY_THRESHOLD = 10; // Número de órdenes para el logro
-// --- FUNCIÓN EXISTENTE: Sistema de Logros ---
-exports.onOrderCompleted = (0, firestore_1.onDocumentCreated)("orders/{orderId}", async (event) => {
-    firebase_functions_1.logger.info(`Nueva orden detectada: ${event.params.orderId}`);
+const FLAVOR_EXPLORER_THRESHOLD = 5;
+const STAR_FREQUENCY_THRESHOLD = 10;
+/**
+ * Función principal del sistema de lealtad. Se activa al crear un documento en 'historial_compras'.
+ * Centraliza el cálculo de puntos, visitas, preferencias y logros.
+ */
+exports.onOrderCompleted = (0, firestore_1.onDocumentCreated)("historial_compras/{orderId}", async (event) => {
+    firebase_functions_1.logger.info(`Iniciando procesamiento de orden completada: ${event.params.orderId}`);
     const snapshot = event.data;
     if (!snapshot) {
-        firebase_functions_1.logger.info("No hay datos en el evento, terminando función.");
+        firebase_functions_1.logger.warn("El evento no contenía datos. Terminando función.");
         return;
     }
     const order = snapshot.data();
-    if (!order.completed || !order.userId || !order.items || order.items.length === 0) {
-        firebase_functions_1.logger.info(`La orden ${event.params.orderId} no está lista para procesar.`);
+    if (!order.userId || !order.items || order.items.length === 0) {
+        firebase_functions_1.logger.info(`La orden ${event.params.orderId} no tiene 'userId' o 'items'. No se procesará.`);
         return;
     }
     const { userId, items, createdAt } = order;
-    const userProfileRef = db.collection("customerProfiles").doc(userId);
+    const clienteRef = db.collection("clientes").doc(userId);
     try {
         await db.runTransaction(async (transaction) => {
-            const userProfileDoc = await transaction.get(userProfileRef);
-            if (!userProfileDoc.exists) {
-                const initialProfile = {
-                    drinkCounts: {},
-                    achievements: [],
-                    totalOrders: 0,
-                };
-                transaction.set(userProfileRef, initialProfile);
+            const clienteDoc = await transaction.get(clienteRef);
+            if (!clienteDoc.exists) {
+                firebase_functions_1.logger.error(`El cliente con ID: ${userId} no existe.`);
+                return;
             }
-            const userProfile = (userProfileDoc.data() || { drinkCounts: {}, achievements: [], totalOrders: 0 });
-            const lastDrink = items[0].name;
-            userProfile.lastDrink = lastDrink;
-            items.forEach(item => {
-                userProfile.drinkCounts[item.name] = (userProfile.drinkCounts[item.name] || 0) + 1;
+            const clienteData = clienteDoc.data();
+            // Cálculo de Puntos
+            const basePoints = items.reduce((sum, item) => sum + (item.cantidad || 0), 0);
+            let multiplier = 1.0;
+            if (clienteData.visitas >= 50)
+                multiplier = 1.5;
+            else if (clienteData.visitas >= 15)
+                multiplier = 1.25;
+            const pointsEarned = Math.round(basePoints * multiplier);
+            const newTotalPoints = (clienteData.puntos || 0) + pointsEarned;
+            // Última Bebida
+            const lastDrink = items.length > 0 ? items[items.length - 1].nombre : clienteData.lastDrink || "";
+            // Bebida Favorita
+            const historialSnapshot = await db.collection("historial_compras").where("userId", "==", userId).get();
+            const allItemsEver = [...items];
+            historialSnapshot.forEach(doc => {
+                const pastOrder = doc.data();
+                if (pastOrder.items)
+                    allItemsEver.push(...pastOrder.items);
             });
-            let favoriteDrink = "";
-            let maxCount = 0;
-            for (const drink in userProfile.drinkCounts) {
-                if (userProfile.drinkCounts[drink] > maxCount) {
-                    maxCount = userProfile.drinkCounts[drink];
-                    favoriteDrink = drink;
-                }
+            const drinkCounts = {};
+            allItemsEver.forEach(item => {
+                if (item.nombre)
+                    drinkCounts[item.nombre] = (drinkCounts[item.nombre] || 0) + (item.cantidad || 1);
+            });
+            let favoriteDrink = clienteData.favoriteDrink || "";
+            if (Object.keys(drinkCounts).length > 0) {
+                favoriteDrink = Object.entries(drinkCounts).reduce((a, b) => a[1] > b[1] ? a : b)[0];
             }
-            userProfile.favoriteDrink = favoriteDrink;
-            userProfile.totalOrders = (userProfile.totalOrders || 0) + 1;
-            const achievements = userProfile.achievements || [];
-            const orderHour = createdAt.toDate().getHours();
-            if (orderHour < 9 && !achievements.includes(ACHIEVEMENT_EARLY_RISER)) {
+            // Gestión de Logros
+            const achievements = clienteData.achievements || [];
+            const totalOrders = (clienteData.visitas || 0) + 1;
+            if (createdAt.toDate().getHours() < 9 && !achievements.includes(ACHIEVEMENT_EARLY_RISER))
                 achievements.push(ACHIEVEMENT_EARLY_RISER);
-                firebase_functions_1.logger.info(`¡Logro desbloqueado para ${userId}: ${ACHIEVEMENT_EARLY_RISER}!`);
-            }
-            const uniqueDrinksCount = Object.keys(userProfile.drinkCounts).length;
-            if (uniqueDrinksCount >= FLAVOR_EXPLORER_THRESHOLD && !achievements.includes(ACHIEVEMENT_FLAVOR_EXPLORER)) {
+            if (Object.keys(drinkCounts).length >= FLAVOR_EXPLORER_THRESHOLD && !achievements.includes(ACHIEVEMENT_FLAVOR_EXPLORER))
                 achievements.push(ACHIEVEMENT_FLAVOR_EXPLORER);
-                firebase_functions_1.logger.info(`¡Logro desbloqueado para ${userId}: ${ACHIEVEMENT_FLAVOR_EXPLORER}!`);
-            }
-            if (userProfile.totalOrders >= STAR_FREQUENCY_THRESHOLD && !achievements.includes(ACHIEVEMENT_STAR_FREQUENCY)) {
+            if (totalOrders >= STAR_FREQUENCY_THRESHOLD && !achievements.includes(ACHIEVEMENT_STAR_FREQUENCY))
                 achievements.push(ACHIEVEMENT_STAR_FREQUENCY);
-                firebase_functions_1.logger.info(`¡Logro desbloqueado para ${userId}: ${ACHIEVEMENT_STAR_FREQUENCY}!`);
-            }
-            userProfile.achievements = achievements;
-            transaction.update(userProfileRef, Object.assign({}, userProfile));
-            firebase_functions_1.logger.info(`Perfil del usuario ${userId} actualizado correctamente.`);
+            // Actualización Atómica del Perfil
+            const profileUpdateData = {
+                puntos: newTotalPoints,
+                visitas: admin.firestore.FieldValue.increment(1),
+                ultima_visita: createdAt,
+                lastDrink, favoriteDrink, achievements,
+            };
+            transaction.update(clienteRef, profileUpdateData);
+            firebase_functions_1.logger.info(`Perfil del cliente ${userId} actualizado con nuevos puntos, visitas y preferencias.`);
         });
     }
     catch (error) {
-        firebase_functions_1.logger.error(`Error al procesar la orden ${event.params.orderId} para el usuario ${userId}:`, error);
+        firebase_functions_1.logger.error(`Error al procesar la orden para el cliente ${userId}:`, error);
     }
 });
-// --- NUEVA FUNCIÓN: Sistema de Puntos y Cupones (Robusta y sin duplicación) ---
+/**
+ * Se encarga EXCLUSIVAMENTE de canjear puntos por cupones Y REINICIAR LOS PUNTOS.
+ */
 exports.onClienteUpdated = (0, firestore_1.onDocumentUpdated)("clientes/{clienteId}", async (event) => {
-    var _a, _b;
-    firebase_functions_1.logger.info(`INICIO de ejecución para cliente: ${event.params.clienteId}`);
-    const beforeData = (_a = event.data) === null || _a === void 0 ? void 0 : _a.before.data();
-    const afterData = (_b = event.data) === null || _b === void 0 ? void 0 : _b.after.data();
-    // Comprobación de seguridad: nos aseguramos de tener los datos necesarios.
-    if (!beforeData || !afterData || typeof afterData.puntos !== 'number' || typeof beforeData.puntos !== 'number') {
-        firebase_functions_1.logger.warn("Datos incompletos o 'puntos' no es un número. Terminando función.");
+    var _a;
+    firebase_functions_1.logger.info(`Revisando puntos para posible cupón para el cliente: ${event.params.clienteId}`);
+    const afterData = (_a = event.data) === null || _a === void 0 ? void 0 : _a.after.data();
+    if (!afterData || typeof afterData.puntos !== 'number') {
+        firebase_functions_1.logger.warn("Datos incompletos o 'puntos' no es un número. Terminando función de cupones.");
         return;
     }
-    const puntosAntes = beforeData.puntos;
-    const puntosDespues = afterData.puntos;
+    const puntosActuales = afterData.puntos;
     const PUNTOS_POR_CUPON = 7;
-    // --- CONDICIÓN MEJORADA ---
-    // La función solo actúa si los puntos AUMENTARON y cruzaron el umbral.
-    // Esto evita que se ejecute en bucle o por otras actualizaciones.
-    if (puntosDespues > puntosAntes && puntosDespues >= PUNTOS_POR_CUPON) {
-        firebase_functions_1.logger.info(`Cliente ${event.params.clienteId} cruzó el umbral de ${PUNTOS_POR_CUPON} puntos. Puntos antes: ${puntosAntes}, Puntos después: ${puntosDespues}`);
-        // Usaremos un "batch write" que funciona de forma similar a una transacción para este caso.
+    if (puntosActuales >= PUNTOS_POR_CUPON) {
+        const cuponesAGenerar = Math.floor(puntosActuales / PUNTOS_POR_CUPON);
+        // *** LÓGICA CORREGIDA: Calcular los puntos restantes ***
+        const puntosRestantes = puntosActuales % PUNTOS_POR_CUPON;
+        firebase_functions_1.logger.info(`Cliente ${event.params.clienteId} ha ganado ${cuponesAGenerar} cupón(es). Puntos restantes: ${puntosRestantes}.`);
         const batch = db.batch();
-        const cuponesAGenerar = Math.floor(puntosDespues / PUNTOS_POR_CUPON);
-        const puntosRestantes = puntosDespues % PUNTOS_POR_CUPON;
-        firebase_functions_1.logger.info(`Generando ${cuponesAGenerar} cupón(es) y estableciendo los puntos del cliente a ${puntosRestantes}.`);
-        // 1. Generamos todos los cupones necesarios
         for (let i = 0; i < cuponesAGenerar; i++) {
             const nuevoCuponRef = db.collection("cupones_bebidas_gratis").doc();
             const fechaExpiracion = new Date();
-            fechaExpiracion.setDate(fechaExpiracion.getDate() + 7); // El cupón expira en 7 días
+            fechaExpiracion.setDate(fechaExpiracion.getDate() + 7);
             batch.set(nuevoCuponRef, {
                 clienteId: event.params.clienteId,
                 codigo: `SAT-${nuevoCuponRef.id.substring(0, 8).toUpperCase()}`,
@@ -116,21 +122,19 @@ exports.onClienteUpdated = (0, firestore_1.onDocumentUpdated)("clientes/{cliente
                 origen: "Canje de Puntos (Cloud Fx)",
             });
         }
-        // 2. Actualizamos los puntos del cliente a su nuevo total
+        // *** LÓGICA CORREGIDA: Añadir la actualización de puntos al batch ***
         const clienteRef = db.collection("clientes").doc(event.params.clienteId);
         batch.update(clienteRef, { puntos: puntosRestantes });
-        // 3. Ejecutamos todas las operaciones como un solo lote atómico.
-        // Si algo falla, ninguna de las operaciones se aplica.
         try {
             await batch.commit();
-            firebase_functions_1.logger.info(`Lote completado: ${cuponesAGenerar} cupón(es) creado(s) y puntos actualizados a ${puntosRestantes} para ${event.params.clienteId}.`);
+            firebase_functions_1.logger.info(`Lote completado: ${cuponesAGenerar} cupón(es) creados y puntos reiniciados para ${event.params.clienteId}.`);
         }
         catch (error) {
-            firebase_functions_1.logger.error(`Error al ejecutar el lote para el cliente ${event.params.clienteId}:`, error);
+            firebase_functions_1.logger.error(`Error al ejecutar el lote de cupones y reinicio de puntos para ${event.params.clienteId}:`, error);
         }
     }
     else {
-        firebase_functions_1.logger.info(`No se cumplieron las condiciones para generar cupón para ${event.params.clienteId}. Puntos antes: ${puntosAntes}, Puntos después: ${puntosDespues}. Terminando ejecución.`);
+        firebase_functions_1.logger.info(`Puntos insuficientes (${puntosActuales}) para generar cupón para ${event.params.clienteId}.`);
     }
 });
 //# sourceMappingURL=index.js.map

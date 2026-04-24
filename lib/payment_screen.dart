@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:saturnotpv/models/customer.dart';
 import 'receipt_screen.dart';
 import 'dart:developer' as developer;
 
@@ -25,15 +24,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
           title: const Text('Error Crítico en el Pago'),
           content: SingleChildScrollView(
             child: Text(
-              'No se pudo archivar la venta. La orden no ha sido modificada y sigue activa.\n\nDetalle del error:\n$errorMessage',
+              'No se pudo procesar la venta. La orden no ha sido modificada y sigue activa.\n\nDetalle del error:\n$errorMessage',
             ),
           ),
           actions: [
             TextButton(
               child: const Text('Aceptar'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
+              onPressed: () => Navigator.of(context).pop(),
             ),
           ],
         );
@@ -49,82 +46,58 @@ class _PaymentScreenState extends State<PaymentScreen> {
     try {
       final orderData = widget.order.data() as Map<String, dynamic>;
       final List<dynamic> items = List.from(orderData['items'] ?? []);
-      final customerId = orderData['cliente_id'];
 
       if (items.isEmpty) {
         throw Exception('La orden no tiene productos para procesar.');
       }
 
       await _firestore.runTransaction((transaction) async {
-        final DocumentReference orderRef = widget.order.reference;
-        DocumentReference? customerRef;
-        DocumentSnapshot? customerDoc;
-        Customer? customer;
+        final orderRef = widget.order.reference;
+        final customerId = orderData['cliente_id'];
 
-        // Fetch customer data early to determine points multiplier
+        // --- INICIO DE LA SIMPLIFICACIÓN ---
+        // La app ya no calcula puntos ni actualiza el perfil del cliente directamente.
+        // Su única responsabilidad es archivar la orden y registrarla en el historial.
+        // La Cloud Function 'onOrderCompleted' se encargará del resto.
+
+        // 1. Crear el registro en 'historial_compras' (si hay cliente).
+        // Esto activará la Cloud Function que actualiza el perfil del cliente.
         if (customerId != null) {
-          customerRef = _firestore.collection('clientes').doc(customerId);
-          customerDoc = await transaction.get(customerRef);
-          if (customerDoc.exists) {
-            customer = Customer.fromFirestore(customerDoc);
-          }
+          final historialCompraRef = _firestore.collection('historial_compras').doc(orderRef.id);
+          final historialData = {
+            'userId': customerId,
+            'items': orderData['items'],
+            'createdAt': orderData['fecha_hora'] ?? FieldValue.serverTimestamp(),
+            'completed': true,
+            'total': orderData['total_orden'],
+            'paymentMethod': paymentMethod,
+          };
+          transaction.set(historialCompraRef, historialData);
         }
 
-        // 1. Calculate points and costs
-        double basePoints = 0;
+        // 2. Archivar la orden (lógica de costos se mantiene por ahora para reportes).
         double totalCosto = 0.0;
         List<Map<String, dynamic>> itemsConCosto = [];
-
         for (var item in items) {
-          final itemMap = Map<String, dynamic>.from(item as Map);
-          final productId = itemMap['id'];
-          final cantidad = (itemMap['cantidad'] ?? 0) as int;
-          basePoints += cantidad;
-          double costoUnitario = 0.0;
+            final itemMap = Map<String, dynamic>.from(item as Map);
+            final productId = itemMap['id'];
+            final cantidad = (itemMap['cantidad'] ?? 0) as int;
+            double costoUnitario = 0.0;
 
-          if (productId != null) {
-            final productDocRef = _firestore.collection('bebidas').doc(productId);
-            final productDoc = await transaction.get(productDocRef);
-            if (productDoc.exists) {
-              final productData = productDoc.data() as Map<String, dynamic>;
-              costoUnitario = (productData['costo'] ?? 0.0).toDouble();
-            } else {
-              developer.log('Producto con ID: $productId no encontrado.',
-                  name: 'saturnotrc.payment');
+            if (productId != null) {
+                final productDocRef = _firestore.collection('bebidas').doc(productId);
+                // Usamos una lectura directa en lugar de en la transacción para evitar contención.
+                final productDoc = await productDocRef.get(); 
+                if (productDoc.exists) {
+                    final productData = productDoc.data() as Map<String, dynamic>;
+                    costoUnitario = (productData['costo'] ?? 0.0).toDouble();
+                }
             }
-          }
-          itemMap['costo_unitario'] = costoUnitario;
-          itemsConCosto.add(itemMap);
-          totalCosto += costoUnitario * cantidad;
+            itemMap['costo_unitario'] = costoUnitario;
+            itemsConCosto.add(itemMap);
+            totalCosto += costoUnitario * cantidad;
         }
         
-        // Determine points multiplier based on customer's visits
-        double multiplier = 1.0;
-        if (customer != null) {
-          if (customer.visitas >= 50) {
-            multiplier = 1.5;
-          } else if (customer.visitas >= 15) {
-            multiplier = 1.25;
-          }
-        }
-
-        final int pointsEarned = (basePoints * multiplier).round();
-
-        // 2. Handle customer points and visits if a customer is linked
-        if (customer != null && customerRef != null) {
-            final currentPoints = customer.puntos;
-            final newTotalPoints = currentPoints + pointsEarned;
-
-            final visitUpdateData = {
-              'visitas': FieldValue.increment(1),
-              'ultima_visita': FieldValue.serverTimestamp(),
-              'puntos': newTotalPoints,
-            };
-
-            transaction.update(customerRef, visitUpdateData);
-        }
-
-        // 3. Archive the order
         final newArchivedOrderRef = _firestore.collection('ordenes_archivadas').doc(orderRef.id);
         final archivedOrderData = {
           ...orderData,
@@ -132,15 +105,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
           'activa': false,
           'metodo_pago': paymentMethod,
           'fecha_finalizacion': FieldValue.serverTimestamp(),
-          'items': itemsConCosto,
+          'items': itemsConCosto, 
           'total_costo': totalCosto,
-          'puntos_ganados': pointsEarned,
-          'multiplicador_puntos': multiplier, // Store the multiplier used
+          // Los campos de puntos se eliminan de aquí.
         };
         transaction.set(newArchivedOrderRef, archivedOrderData);
 
-        // 4. Delete the original active order
+        // 3. Borrar la orden activa original.
         transaction.delete(orderRef);
+
+        // --- FIN DE LA SIMPLIFICACIÓN ---
       });
 
       if (mounted) {
@@ -153,7 +127,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       }
     } catch (e, s) {
       developer.log(
-        'Error al finalizar el pago.',
+        'Error al finalizar el pago desde el cliente.',
         name: 'saturnotrc.payment.finalize',
         error: e,
         stackTrace: s,
@@ -169,6 +143,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       }
     }
   }
+
 
   @override
   Widget build(BuildContext context) {

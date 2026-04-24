@@ -168,7 +168,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     );
   }
   
-    Widget _buildProfileView(Customer customer) {
+  Widget _buildProfileView(Customer customer) {
     return ListView(
       padding: const EdgeInsets.all(16.0),
       children: [
@@ -176,10 +176,50 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
         const SizedBox(height: 20),
         _buildPointsCard(customer),
         const SizedBox(height: 20),
+        _buildFavoriteDrinkCard(customer), 
+        const SizedBox(height: 20),
         _buildCouponsSection(),
         const SizedBox(height: 20),
         _buildStatsCard(customer),
       ],
+    );
+  }
+
+  Widget _buildFavoriteDrinkCard(Customer customer) {
+    final favoriteDrink = customer.favoriteDrink;
+    return Card(
+      color: const Color(0xFF2E2E2E),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 28),
+                const SizedBox(width: 10),
+                Text(
+                  'Tu Bebida Favorita',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 15),
+            if (favoriteDrink != null && favoriteDrink.isNotEmpty)
+              Text(
+                favoriteDrink,
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFFFFD700)),
+                textAlign: TextAlign.center,
+              )
+            else
+              const Text(
+                '¡Sigue explorando nuestro menú para descubrir tu bebida favorita!',
+                style: TextStyle(fontSize: 16, color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -278,6 +318,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     );
   }
 
+  // --- WIDGET MODIFICADO ---
   Widget _buildWelcomeCard(Customer customer) {
     final level = LoyaltyLevel.fromVisits(customer.visitas);
     return Card(
@@ -296,8 +337,18 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
               ],
             ),
             const SizedBox(height: 10),
-             if (customer.ultimaVisita != null)
-              Text('Última visita: ${DateFormat.yMMMd('es_MX').add_jm().format(customer.ultimaVisita!)}', style: const TextStyle(color: Colors.white70)),
+            if (customer.ultimaVisita != null)
+              Text(
+                'Última visita: ${DateFormat.yMMMd('es_MX').add_jm().format(customer.ultimaVisita!)}',
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+            const SizedBox(height: 4),
+            // --- NUEVA LÍNEA ---
+            if (customer.lastDrink != null && customer.lastDrink!.isNotEmpty)
+              Text(
+                'Última bebida: ${customer.lastDrink}',
+                style: const TextStyle(color: Colors.white70, fontSize: 14, fontStyle: FontStyle.italic),
+              ),
           ],
         ),
       ),
